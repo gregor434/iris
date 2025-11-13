@@ -20,6 +20,7 @@ from utils.dataset import RealDatasetLDR,SyntheticDatasetLDR
 from utils.dataset.scannetpp.dataset import Scannetpp
 from utils.ops import *
 from utils.path_tracing import ray_intersect,path_tracing,path_tracing_single
+from utils.common import save_image, add_model_specific_args, load_mesh, load_checkpoint_weights
 
 from model.brdf import NGPBRDF
 from model.emitter import SLFEmitter, AreaEmitter
@@ -32,32 +33,9 @@ from argparse import Namespace, ArgumentParser
 from const import GAMMA, set_random_seed
 set_random_seed()
 
-def save_image(image, path, colormap=False):
-    if torch.is_tensor(image):
-        image = image.cpu().numpy()
-    image = np.clip(image, 0.0, 1.0)
-    image = (image*255).astype(np.uint8)
-    if colormap:
-        image = cv2.applyColorMap(image, cv2.COLORMAP_MAGMA)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    h, w = image.shape[:2]
-    image = image[:h-h%2, :w-w%2]
-    image = Image.fromarray(image)
-    image.save(path)
-    return np.array(image)
-
-def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
-        for name, args in default_options.items():
-            if(args['type'] == bool):
-                parser.add_argument('--{}'.format(name), type=eval, choices=[True, False], default=str(args.get('default')))
-            else:
-                parser.add_argument('--{}'.format(name), **args)
-        return parser
-
 def main():
     parser = ArgumentParser()
-    parser = add_model_specific_args(parser)
+    parser = add_model_specific_args(parser, default_options)
 
     # add PROGRAM level args
     parser.add_argument('--experiment_name', type=str, required=True)
@@ -105,32 +83,17 @@ def main():
     img_hw = dataset.img_hw
 
     # load geometry
-    if dataset_name in ['synthetic', 'real']:
-        mesh_path = os.path.join(dataset_path,'scene.obj')
-        mesh_type = 'obj'
-    elif dataset_name == 'scannetpp':
-        mesh_path = os.path.join(dataset_path, 'data', args.scene, 'scans', 'scene.ply')
-        mesh_type = 'ply'
-    assert Path(mesh_path).exists(), 'mesh not found: '+mesh_path
-    
-    scene = mitsuba.load_dict({
-        'type': 'scene',
-        'shape_id':{
-            'type': mesh_type,
-            'filename': mesh_path, 
-        }
-    })
+    scene, mesh_path, mesh_type = load_mesh(dataset_name, dataset_path,
+                                            scene=args.scene if dataset_name == 'scannetpp' else None)
 
     model_list = []
     # load BRDF and emitters
     emitter_path = args.emitter_path
     mask = torch.load(os.path.join(emitter_path,'vslf.npz'),map_location='cpu')
     last_ckpt = Path(args.checkpoint_path) / experiment_name / args.ckpt
-    state_dict = torch.load(last_ckpt, map_location='cpu')['state_dict']
-    weight = {}
-    for k,v in state_dict.items():
-        if 'material.' in k:
-            weight[k.replace('material.','')]=v
+    
+    # Load material weights
+    weight = load_checkpoint_weights(last_ckpt, prefix_filter='material.')
     material_net = NGPBRDF(mask['voxel_min'],mask['voxel_max'])
     material_net.load_state_dict(weight)
     material_net.to(device)
@@ -144,11 +107,9 @@ def main():
     emitter_net.to(device)
     model_list.append(emitter_net)
     
+    # Load CRF weights
+    weight = load_checkpoint_weights(last_ckpt, prefix_filter='model_crf.')
     model_crf = EmorCRF(args.crf_basis)
-    weight = {}
-    for k,v in state_dict.items():
-        if 'model_crf.' in k:
-            weight[k.replace('model_crf.','')]=v
     model_crf.load_state_dict(weight)
     model_crf.to(device)
     model_list.append(model_crf)
@@ -244,33 +205,33 @@ def main():
         L_full = L_full.detach().reshape(*img_hw, -1).cpu().numpy()
 
         path = dir_out['rgb'] / '{:0>5d}_rgb_full.png'.format(i)
-        imgs_full.append(save_image(L_full, path))
+        imgs_full.append(save_image(L_full, path, crop_even=True))
 
         kd = kd.reshape(*img_hw,-1).cpu().numpy()/(SPP//spp)
         path = dir_out['diffuse'] / '{:0>5d}_kd.png'.format(i)
-        imgs_kd.append(save_image(kd, path))
+        imgs_kd.append(save_image(kd, path, crop_even=True))
 
         a_prime = a_prime.reshape(*img_hw,-1).cpu().numpy()/(SPP//spp)
         path = dir_out['a_prime'] / '{:0>5d}_a_prime.png'.format(i)
-        imgs_a_prime.append(save_image(a_prime, path)) 
+        imgs_a_prime.append(save_image(a_prime, path, crop_even=True)) 
 
         roughness = roughness.reshape(*img_hw).cpu().numpy()/(SPP//spp)
         path = dir_out['roughness'] / '{:0>5d}_roughness.png'.format(i)
-        imgs_roughness.append(save_image(roughness, path))
+        imgs_roughness.append(save_image(roughness, path, crop_even=True))
         path = dir_out['roughness'] / '{:0>5d}_roughness_color.png'.format(i)
-        imgs_roughness_color.append(save_image(roughness, path, colormap=True)) 
+        imgs_roughness_color.append(save_image(roughness, path, colormap=True, crop_even=True)) 
 
         metallic = metallic.reshape(*img_hw).cpu().numpy()/(SPP//spp)
         path = dir_out['metallic'] / '{:0>5d}_metallic.png'.format(i)
-        imgs_metallic.append(save_image(metallic, path))
+        imgs_metallic.append(save_image(metallic, path, crop_even=True))
         path = dir_out['metallic'] / '{:0>5d}_metallic_color.png'.format(i)
-        imgs_metallic_color.append(save_image(metallic, path, colormap=True))
+        imgs_metallic_color.append(save_image(metallic, path, colormap=True, crop_even=True))
         
         emission = emission.reshape(*img_hw,-1).cpu().numpy()/(SPP//spp)
         normalization_factor = 10.0
         emission /= normalization_factor
         path = dir_out['emission'] / '{:0>5d}_emission.png'.format(i)
-        imgs_emission.append(save_image(emission, path)) 
+        imgs_emission.append(save_image(emission, path, crop_even=True)) 
     
     out_path = Path(args.output_path)
     imgs_full += imgs_full[::-1]

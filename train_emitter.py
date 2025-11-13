@@ -29,6 +29,7 @@ from utils.dataset import InvRealDatasetLDR,RealDatasetLDR,InvSyntheticDatasetLD
 from utils.dataset.scannetpp.dataset import Scannetpp, InvScannetpp
 from utils.ops import *
 from utils.path_tracing import ray_intersect, path_tracing, path_tracing_single
+from utils.common import add_model_specific_args, load_mesh, load_checkpoint_weights
 from model.mlps import ImplicitMLP
 from model.brdf import NGPBRDF
 from model.emitter import SLFEmitter, SLFEmitterLearn
@@ -46,31 +47,15 @@ class ModelTrainer(pl.LightningModule):
         
         dataset, dataset_root = hparams.dataset
         scene = hparams.scene
-        if dataset in ['synthetic', 'real']:
-            mesh_path = os.path.join(dataset_root,'scene.obj')
-            mesh_type = 'obj'
-        elif dataset == 'scannetpp':
-            mesh_path = os.path.join(dataset_root, 'data', scene, 'scans', 'scene.ply')
-            mesh_type = 'ply'
-        assert Path(mesh_path).exists(), 'mesh not found: '+mesh_path
+        
         # load scene geometry
-        self.scene = mitsuba.load_dict({
-            'type': 'scene',
-            'shape_id':{
-                'type': mesh_type,
-                'filename': mesh_path
-            }
-        })
+        self.scene, mesh_path, mesh_type = load_mesh(dataset, dataset_root, scene=scene)
 
         # initiallize BRDF
         mask = torch.load(hparams.voxel_path,map_location='cpu')
         material_net = NGPBRDF(mask['voxel_min'],mask['voxel_max'])
         if hparams.ckpt_path:
-            state_dict = torch.load(hparams.ckpt_path, map_location='cpu')['state_dict']
-            weight = {}
-            for k,v in state_dict.items():
-                if 'material.' in k:
-                    weight[k.replace('material.','')]=v
+            weight = load_checkpoint_weights(hparams.ckpt_path, prefix_filter='material.')
             material_net.load_state_dict(weight)
         for p in material_net.parameters():
             p.requires_grad=False
@@ -85,11 +70,7 @@ class ModelTrainer(pl.LightningModule):
 
         model_crf = EmorCRF(dim=hparams.crf_basis)
         if hparams.ckpt_path:
-            state_dict = torch.load(hparams.ckpt_path, map_location='cpu')['state_dict']
-            weight = {}
-            for k,v in state_dict.items():
-                if 'model_crf.' in k:
-                    weight[k.replace('model_crf.','')]=v
+            weight = load_checkpoint_weights(hparams.ckpt_path, prefix_filter='model_crf.')
             model_crf.load_state_dict(weight)
         for p in model_crf.parameters():
             p.requires_grad=False
@@ -378,18 +359,9 @@ class ModelTrainer(pl.LightningModule):
         return
 
             
-def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
-        for name, args in default_options.items():
-            if(args['type'] == bool):
-                parser.add_argument('--{}'.format(name), type=eval, choices=[True, False], default=str(args.get('default')))
-            else:
-                parser.add_argument('--{}'.format(name), **args)
-        return parser
-        
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser = add_model_specific_args(parser)
+    parser = add_model_specific_args(parser, default_options)
     hparams, _ = parser.parse_known_args()
 
     # add PROGRAM level args
