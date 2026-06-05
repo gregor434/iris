@@ -216,13 +216,14 @@ class ModelTrainer(pl.LightningModule):
         self.log('init/loss_a', loss_a)
         self.log('init/psnr', psnr)
 
+        return loss
+
+    def on_train_batch_end(self, outputs, batch, batch_idx):
         val_step = self.hparams.val_step
-        if self.global_step % val_step == 0: # and self.global_step > 0:
+        if self.global_step % val_step == 0:
             val_frame = self.val_dataset.val_frame
             batch = self.val_dataset[val_frame]
             self.validation(batch)
-            
-        return loss
     
     def validation(self, batch):
         # print('[val in training]')

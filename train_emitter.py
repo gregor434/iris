@@ -207,19 +207,21 @@ class ModelTrainer(pl.LightningModule):
         self.log('train/loss_c', loss_c)
         self.log('train/psnr', psnr)
 
+        return loss
+
+    def on_train_batch_end(self, outputs, batch, batch_idx):
         val_step = self.hparams.val_step
-        if self.global_step%val_step == 0: # and self.global_step > 0:
+        if self.global_step % val_step == 0:
             val_frame = self.val_dataset.val_frame
             batch = self.val_dataset[val_frame]
             self.validation(batch)
-        
-        return loss
     
     def validation(self, batch):
         # print('[val in training]')
         SPP = self.hparams.SPP
         spp = self.hparams.spp
         img_hw = self.img_hw
+        chunk_size = self.hparams.val_chunk_size
         denoiser = mitsuba.OptixDenoiser(img_hw[::-1])
         dir_val = os.path.join('outputs', self.hparams.experiment_name, self.hparams.dir_val)
         os.makedirs(dir_val, exist_ok=True)
@@ -237,42 +239,49 @@ class ModelTrainer(pl.LightningModule):
         metallic = torch.zeros_like(rays_o[..., :1])
         emission = torch.zeros_like(rays_o)
         with torch.no_grad():
-            for _ in range(SPP//spp):
-                L_train += path_tracing_single(
-                    self.scene, self.emitter, self.material,
-                    rays_o, rays_d, dxdu, dydv, spp
-                )
-                L_full  += path_tracing(
-                    self.scene, self.emitter, self.material,
-                    rays_o, rays_d, dxdu, dydv, spp,
-                    indir_depth=5
-                )
+            for b0 in range(0, len(rays_o), chunk_size):
+                b1 = min(b0 + chunk_size, len(rays_o))
+                rays_o_b = rays_o[b0:b1]
+                rays_d_b = rays_d[b0:b1]
+                dxdu_b = dxdu[b0:b1]
+                dydv_b = dydv[b0:b1]
 
-                # sample pixels
-                du,dv = torch.rand(2,len(rays_o),spp,1,device=device)
-                ds = rays_d[:,None]+ dxdu[:,None]*du + dydv[:,None]*dv
-                ds = NF.normalize(ds,dim=-1).reshape(-1,3)
-                xs = rays_o.repeat_interleave(spp,dim=0)
+                for _ in range(SPP//spp):
+                    L_train[b0:b1] += path_tracing_single(
+                        self.scene, self.emitter, self.material,
+                        rays_o_b, rays_d_b, dxdu_b, dydv_b, spp
+                    )
+                    L_full[b0:b1] += path_tracing(
+                        self.scene, self.emitter, self.material,
+                        rays_o_b, rays_d_b, dxdu_b, dydv_b, spp,
+                        indir_depth=5
+                    )
 
-                positions,normals,_,triagnle_idxs,valid = ray_intersect(self.scene,xs,ds)
+                    # sample pixels
+                    du,dv = torch.rand(2,len(rays_o_b),spp,1,device=device)
+                    ds = rays_d_b[:,None]+ dxdu_b[:,None]*du + dydv_b[:,None]*dv
+                    ds = NF.normalize(ds,dim=-1).reshape(-1,3)
+                    xs = rays_o_b.repeat_interleave(spp,dim=0)
 
-                mat = self.material(positions)
+                    positions,normals,_,triagnle_idxs,valid = ray_intersect(self.scene,xs,ds)
 
-                # get brdf parameters
-                albedo_ = mat['albedo']
-                metallic_ = mat['metallic']
-                roughness_ = mat['roughness']
+                    mat = self.material(positions)
 
-                # find emission
-                emission_ = self.emitter.eval_emitter(positions,ds,triagnle_idxs)[0]
-                emit_mask = emission_.sum(-1,keepdim=True)==0
-                valid = valid.unsqueeze(-1)
+                    # get brdf parameters
+                    albedo_ = mat['albedo']
+                    metallic_ = mat['metallic']
+                    roughness_ = mat['roughness']
 
-                # scene intrinsics
-                albedo += (albedo_*valid*emit_mask).reshape(-1,spp,3).mean(1)
-                roughness += (roughness_*valid*emit_mask).reshape(-1,spp,1).mean(1)
-                metallic += (metallic_*valid*emit_mask).reshape(-1,spp,1).mean(1)
-                emission += emission_.reshape(-1,spp,3).mean(1)
+                    # find emission
+                    emission_ = self.emitter.eval_emitter(positions,ds,triagnle_idxs)[0]
+                    emit_mask = emission_.sum(-1,keepdim=True)==0
+                    valid = valid.unsqueeze(-1)
+
+                    # scene intrinsics
+                    albedo[b0:b1] += (albedo_*valid*emit_mask).reshape(-1,spp,3).mean(1)
+                    roughness[b0:b1] += (roughness_*valid*emit_mask).reshape(-1,spp,1).mean(1)
+                    metallic[b0:b1] += (metallic_*valid*emit_mask).reshape(-1,spp,1).mean(1)
+                    emission[b0:b1] += emission_.reshape(-1,spp,3).mean(1)
 
 
         L_train = L_train / (SPP//spp)
