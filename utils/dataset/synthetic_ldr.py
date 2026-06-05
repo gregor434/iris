@@ -57,12 +57,23 @@ def get_rays(directions, c2w, focal=None):
         return rays_o, rays_d
 
 def open_exr(file,img_hw):
-    img = cv2.imread(file,cv2.IMREAD_UNCHANGED)[...,[2,1,0]]
+    img = cv2.imread(file,cv2.IMREAD_UNCHANGED)
+    if len(img.shape) == 2:
+        img = np.repeat(img[..., None], 3, axis=2)
+    else:
+        img = img[...,[2,1,0]]
     assert img.shape[0] == img_hw[0]
     assert img.shape[1] == img_hw[1]
-    #img = cv2.resize(img,img_hw,cv2.INTER_LANCZOS4)
     img = torch.from_numpy(img.astype(np.float32))
     return img
+
+def open_exr_mask(file, img_hw):
+    img = cv2.imread(file, cv2.IMREAD_UNCHANGED)
+    if len(img.shape) == 3:
+        img = img[..., 0]
+    assert img.shape[0] == img_hw[0]
+    assert img.shape[1] == img_hw[1]
+    return torch.from_numpy(img.astype(np.float32))
 
 def open_png(file,img_hw, gamma=None):
     img = cv2.imread(str(file))[...,[2,1,0]]
@@ -333,9 +344,15 @@ class InvSyntheticDatasetLDR(Dataset):
 
                 # load part or semantic segmentation
                 if self.has_part:
-                    segmentation = torch.from_numpy(cv2.imread(os.path.join(self.root_dir,'IndexMA','{:03d}_0001.exr'.format(cur_idx)),-1))[...,0].reshape(-1,1).float()
+                    segmentation = open_exr_mask(
+                        os.path.join(self.root_dir, 'IndexMA', '{:03d}_0001.exr'.format(cur_idx)),
+                        self.img_hw
+                    ).reshape(-1,1)
                 else:
-                    segmentation = torch.from_numpy(cv2.imread(os.path.join(self.root_dir,'segmentation','{:03d}.exr'.format(cur_idx)),-1))[...,0].reshape(-1,1).float()
+                    segmentation = open_exr_mask(
+                        os.path.join(self.root_dir, 'segmentation', '{:03d}.exr'.format(cur_idx)),
+                        self.img_hw
+                    ).reshape(-1,1)
 
                 self.all_rgbs += [img]
                 rays_o, rays_d,dxdu,dydv = get_rays(self.directions, c2w, focal=self.focal) # both (h*w, 3)
@@ -444,9 +461,15 @@ class InvSyntheticDatasetLDR(Dataset):
             emission = open_exr(os.path.join(self.root_dir,'Emit','{:03d}_0001.exr'.format(cur_idx)),self.img_hw).reshape(-1,3)
 
             if self.has_part:
-                segmentation = torch.from_numpy(cv2.imread(os.path.join(self.root_dir,'IndexMA','{:03d}_0001.exr'.format(cur_idx)),-1))[...,0].reshape(-1).float()
+                segmentation = open_exr_mask(
+                    os.path.join(self.root_dir, 'IndexMA', '{:03d}_0001.exr'.format(cur_idx)),
+                    self.img_hw
+                ).reshape(-1)
             else:
-                segmentation = torch.from_numpy(cv2.imread(os.path.join(self.root_dir,'segmentation','{:03d}.exr'.format(cur_idx)),-1))[...,0].reshape(-1).float()
+                segmentation = open_exr_mask(
+                    os.path.join(self.root_dir, 'segmentation', '{:03d}.exr'.format(cur_idx)),
+                    self.img_hw
+                ).reshape(-1)
             
             rays_o,rays_d,dxdu,dydv = get_rays(self.directions, c2w, focal=self.focal)
 
