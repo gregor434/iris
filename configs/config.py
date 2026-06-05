@@ -35,6 +35,10 @@ default_options = {
         'type': int,
         'default': 250
     },
+    'val_chunk_size': {
+        'type': int,
+        'default': 4096
+    },
     
     # whether has part segmentation
     'has_part': {
