@@ -183,9 +183,20 @@ python render_relight.py --experiment_name $EXP --device 0\
 - For object insertion, the emitter geometry and average radiance are extracted with `scripts/extract_emitter.sh`. The assets for insertion can be downloaded [here](https://uofi.box.com/s/qe5lhq5c9f49fq76y46o6qq7lay6gsw6) and put under `outputs`.
 
 ## Evaluation
-The inverse rendering metric of FIPT synthetic scenes is calculated by (please modify the paths accordingly):
+The inverse rendering metric of FIPT synthetic scenes can be computed for one or more scenes:
 ```bash
-python -m utils.metric_brdf
+python -m utils.metric_brdf bathroom kitchen
+```
+
+The script resolves:
+- ground truth from `data/iris/datasets/fipt/indoor_synthetic/<scene>/<split>`
+- predictions from `outputs/fipt_syn_<scene>/output/<split>`
+
+By default it evaluates the `train` split, because the synthetic `val` split does not include the ground-truth `albedo/*.exr` files required by the metric script. It prints per-scene metrics and, when multiple scenes are given, an aggregated average over scenes.
+
+A shell wrapper is also provided:
+```bash
+bash scripts/fipt/eval_synthetic_brdf.sh bathroom kitchen
 ```
 
 ## Customized Data
