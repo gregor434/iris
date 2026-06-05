@@ -33,6 +33,7 @@ def main():
     parser.add_argument('--spp', type=int,default=100, help='number of samples for each triangle emitter')
     parser.add_argument('--threshold',type=float,default=0.99,help='threshold for emitter')
     parser.add_argument('--ldr_img_dir', type=str, default=None)
+    parser.add_argument('--has_part', type=int, default=0, help='whether to use synthetic part segmentation')
     parser.add_argument('--res_scale', type=float, default=1.0)
     args = parser.parse_args()
 
@@ -60,7 +61,13 @@ def main():
     })
 
     if args.dataset == 'synthetic':
-        dataset = InvSyntheticDatasetLDR(SCENE, img_dir=args.ldr_img_dir, split='train', pixel=False)
+        dataset = InvSyntheticDatasetLDR(
+            SCENE,
+            img_dir=args.ldr_img_dir,
+            split='train',
+            pixel=False,
+            has_part=args.has_part,
+        )
     elif args.dataset == 'real':
         dataset = InvRealDatasetLDR(SCENE, img_dir=args.ldr_img_dir, split='train', pixel=False)
     elif args.dataset == 'scannetpp':
