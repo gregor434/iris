@@ -239,7 +239,7 @@ def path_tracing(scene,emitter_net,material_net,rays_o,rays_d,dx_du,dy_dv,spp,in
     
     # drop invalid intersection
     if not valid_next.any():
-        return L
+        return L.reshape(B,spp,3).mean(1)
     position = position[valid_next]
     normal = normal[valid_next]
     wo = -wi[valid_next]
@@ -345,7 +345,7 @@ def path_tracing_single(scene,emitter_net,material_net,rays_o,rays_d,dx_du,dy_dv
     
     # drop invalid intersection
     if not valid_next.any():
-        return L
+        return L.reshape(B,spp,3).mean(1)
     position = position[valid_next]
     normal = normal[valid_next]
     wo = -wi[valid_next]
