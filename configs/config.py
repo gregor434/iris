@@ -39,6 +39,10 @@ default_options = {
         'type': int,
         'default': 4096
     },
+    'render_chunk_size': {
+        'type': int,
+        'default': 8192
+    },
     
     # whether has part segmentation
     'has_part': {

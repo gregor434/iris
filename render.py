@@ -154,6 +154,7 @@ def main():
     ssim_list = []
     SPP = args.SPP
     spp = args.spp
+    chunk_size = args.render_chunk_size
     for i in tqdm(range(len(dataset))):
         batch = dataset[i]
         rays = batch['rays'].to(device)
@@ -168,56 +169,64 @@ def main():
         metallic = torch.zeros_like(rays_x[..., :1])
         emission = torch.zeros_like(rays_x)
         slf = torch.zeros_like(rays_x)
-        for _ in range(SPP//spp):
-            # render color with path tracing
-            L_full += path_tracing(
-                scene,emitter_net,material_net,
-                rays_x,rays_d,dxdu,dydv,spp,
-                indir_depth=5)
-            
-            # sample pixels
-            du,dv = torch.rand(2,len(rays_x),spp,1,device=device)
-            ds = rays_d[:,None]+ dxdu[:,None]*du + dydv[:,None]*dv
-            ds = F.normalize(ds,dim=-1).reshape(-1,3)
-            xs = rays_x.repeat_interleave(spp,dim=0)
+        with torch.no_grad():
+            for b0 in range(0, len(rays_x), chunk_size):
+                b1 = min(b0 + chunk_size, len(rays_x))
+                rays_x_b = rays_x[b0:b1]
+                rays_d_b = rays_d[b0:b1]
+                dxdu_b = dxdu[b0:b1]
+                dydv_b = dydv[b0:b1]
 
-            positions,normals,_,triagnle_idxs,valid = ray_intersect(scene,xs,ds)
+                for _ in range(SPP//spp):
+                    # render color with path tracing
+                    L_full[b0:b1] += path_tracing(
+                        scene,emitter_net,material_net,
+                        rays_x_b,rays_d_b,dxdu_b,dydv_b,spp,
+                        indir_depth=5)
+                    
+                    # sample pixels
+                    du,dv = torch.rand(2,len(rays_x_b),spp,1,device=device)
+                    ds = rays_d_b[:,None]+ dxdu_b[:,None]*du + dydv_b[:,None]*dv
+                    ds = F.normalize(ds,dim=-1).reshape(-1,3)
+                    xs = rays_x_b.repeat_interleave(spp,dim=0)
 
-            mat = material_net(positions)
+                    positions,normals,_,triagnle_idxs,valid = ray_intersect(scene,xs,ds)
 
-            # get brdf parameters
-            albedo_ = mat['albedo']
-            metallic_ = mat['metallic']
-            roughness_ = mat['roughness']
-            kd_ = albedo_*(1-metallic_)
-            ks_ = 0.04*(1-metallic_) + albedo_*metallic_
+                    mat = material_net(positions)
 
-            # calculate material reflectance
-            _,_,g0,g1 = material_net.sample_specular(
-                torch.rand(len(metallic_),2,device=device),-ds,normals,roughness_)
-            a_prime_ = g0*ks_+g1+kd_
+                    # get brdf parameters
+                    albedo_ = mat['albedo']
+                    metallic_ = mat['metallic']
+                    roughness_ = mat['roughness']
+                    kd_ = albedo_*(1-metallic_)
+                    ks_ = 0.04*(1-metallic_) + albedo_*metallic_
 
-            # get emission
-            emission_ = emitter_net.eval_emitter(positions,ds,triagnle_idxs)[0]
-            non_emit_mask = emission_.sum(-1)==0
+                    # calculate material reflectance
+                    _,_,g0,g1 = material_net.sample_specular(
+                        torch.rand(len(metallic_),2,device=device),-ds,normals,roughness_)
+                    a_prime_ = g0*ks_+g1+kd_
 
-            # get SLF
-            slf_ = emitter_net(positions)
+                    # get emission
+                    emission_ = emitter_net.eval_emitter(positions,ds,triagnle_idxs)[0]
+                    non_emit_mask = emission_.sum(-1)==0
 
-            # Set default values for emitter region
-            valid = torch.logical_and(valid, non_emit_mask)
-            kd_[~valid] = 1.0
-            a_prime_[~valid] = 1.0
-            roughness_[~valid] = 1.0
-            metallic_[~valid] = 0.0
+                    # get SLF
+                    slf_ = emitter_net(positions)
 
-            # scene intrinsics
-            kd += kd_.reshape(-1,spp,3).mean(1)
-            a_prime += a_prime_.reshape(-1,spp,3).mean(1)
-            roughness += roughness_.reshape(-1,spp,1).mean(1)
-            metallic += metallic_.reshape(-1,spp,1).mean(1)
-            emission += emission_.reshape(-1,spp,3).mean(1)
-            slf += slf_.reshape(-1, spp, 3).mean(1)
+                    # Set default values for emitter region
+                    valid = torch.logical_and(valid, non_emit_mask)
+                    kd_[~valid] = 1.0
+                    a_prime_[~valid] = 1.0
+                    roughness_[~valid] = 1.0
+                    metallic_[~valid] = 0.0
+
+                    # scene intrinsics
+                    kd[b0:b1] += kd_.reshape(-1,spp,3).mean(1)
+                    a_prime[b0:b1] += a_prime_.reshape(-1,spp,3).mean(1)
+                    roughness[b0:b1] += roughness_.reshape(-1,spp,1).mean(1)
+                    metallic[b0:b1] += metallic_.reshape(-1,spp,1).mean(1)
+                    emission[b0:b1] += emission_.reshape(-1,spp,3).mean(1)
+                    slf[b0:b1] += slf_.reshape(-1, spp, 3).mean(1)
 
         L_full = L_full.reshape(*img_hw,-1).cpu()/(SPP//spp)
         L_full = denoiser(L_full.numpy()).numpy()
