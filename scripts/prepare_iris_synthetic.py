@@ -33,6 +33,12 @@ def parse_args():
         default="albedo_ldr",
         help="Source for initialization albedo PNGs copied to Image/albedo and irisformer/albedo.",
     )
+    parser.add_argument(
+        "--camera-convention",
+        choices=["iris", "opencv"],
+        default="iris",
+        help="Convention of input transform_matrix values. OpenCV poses are converted to IRIS camera axes.",
+    )
     return parser.parse_args()
 
 
@@ -166,6 +172,16 @@ def write_camera_metadata(split_dir, frame_count, exposure, gamma):
     write_npy_float32(cam_dir / "crf.npy", (3, 1024), curve * 3)
 
 
+def convert_camera_transform(transform_matrix, camera_convention):
+    if camera_convention == "iris":
+        return transform_matrix
+    converted = [list(row) for row in transform_matrix]
+    for row in converted[:3]:
+        row[0] *= -1
+        row[1] *= -1
+    return converted
+
+
 def write_split(
     source,
     output,
@@ -176,6 +192,7 @@ def write_split(
     exposure,
     gamma,
     init_albedo_source,
+    camera_convention,
     link=False,
 ):
     split_dir = output / split_name
@@ -202,12 +219,13 @@ def write_split(
         split_frames.append(
             {
                 "file_path": f"{split_name}/Image/{new_stem}",
-                "transform_matrix": frame["transform_matrix"],
+                "transform_matrix": convert_camera_transform(frame["transform_matrix"], camera_convention),
             }
         )
 
     transforms = {
         "camera_angle_x": camera_angle_x,
+        "coordinate_convention": "iris",
         "frames": split_frames,
     }
     with (split_dir / "transforms.json").open("w") as f:
@@ -357,6 +375,7 @@ def main():
         exposure,
         gamma,
         args.init_albedo_source,
+        args.camera_convention,
         args.link,
     )
     write_split(
@@ -369,6 +388,7 @@ def main():
         exposure,
         gamma,
         args.init_albedo_source,
+        args.camera_convention,
         args.link,
     )
 
@@ -381,6 +401,7 @@ def main():
     print(f"train frames: {len(train_indices)}")
     print(f"val frames: {len(val_indices)}")
     print(f"init albedo source: {args.init_albedo_source}")
+    print(f"camera convention: {args.camera_convention} -> iris")
     print(f"exposure: {exposure}")
     print(f"gamma CRF: {gamma}")
 
