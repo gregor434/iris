@@ -4,18 +4,23 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+set -e
+
 # data folder
-DATASET_ROOT='data/iris/datasets/fipt/indoor_synthetic'
-DATASET='real'
+DATASET_ROOT='./data/iris/datasets/fipt/indoor_synthetic/'
+DATASET='synthetic'
 # scene name
-SCENE='conferenceroom'
+SCENE='bathroom_debug'
 LDR_IMG_DIR='Image'
-EXP='fipt_real_conferenceroom'
-VAL_FRAME=0
+EXP='fipt_syn_bathroom_mi_debug'
+VAL_FRAME=39
 CRF_BASIS=3
+VAL_CHUNK_SIZE=8192
+BATCH_SIZE=32768
+VAL_STEP=500
 # whether has part segmentation
-HAS_PART=0
-SPP=128
+HAS_PART=1
+SPP=32
 spp=32
 
 # bake surface light field (SLF)
@@ -23,18 +28,19 @@ python slf_bake.py --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake \
   --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR
 
 # extract emitter mask
-python extract_emitter_ldr.py --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR --threshold 0.99
+python extract_emitter_ldr.py --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR --has_part $HAS_PART --threshold 0.99
 
-python initialize.py --experiment_name $EXP --max_epochs 3 \
+python initialize.py --experiment_name $EXP --max_epochs 6 \
   --dataset $DATASET $DATASET_ROOT$SCENE \
   --voxel_path checkpoints/$EXP/bake/vslf.npz \
   --emitter_path checkpoints/$EXP/bake/emitter.pth \
-  --has_part $HAS_PART --ldr_img_dir $LDR_IMG_DIR --val_frame $VAL_FRAME --SPP $SPP --spp $spp --crf_basis $CRF_BASIS
+  --has_part $HAS_PART --ldr_img_dir $LDR_IMG_DIR --val_frame $VAL_FRAME --SPP $SPP --spp $spp --crf_basis $CRF_BASIS \
+  --batch_size $BATCH_SIZE --val_step $VAL_STEP --val_chunk_size $VAL_CHUNK_SIZE
 
 mv checkpoints/$EXP/last.ckpt checkpoints/$EXP/init.ckpt
 
 # extract emitters
-python extract_emitter_ldr.py --mode update --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --ckpt checkpoints/$EXP/init.ckpt --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR
+python extract_emitter_ldr.py --mode update --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --ckpt checkpoints/$EXP/init.ckpt --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR --has_part $HAS_PART
 
 python bake_shading.py \
   --scene $DATASET_ROOT$SCENE --dataset $DATASET \
@@ -45,13 +51,15 @@ python bake_shading.py \
 
 # optimize BRDF, CRF
 python train_brdf_crf.py --experiment_name $EXP \
-  --max_epochs 2 --dir_val val_0 \
+  --max_epochs 4 --dir_val val_0 \
   --ckpt_path checkpoints/$EXP/init.ckpt \
   --voxel_path checkpoints/$EXP/bake/vslf.npz \
   --emitter_path checkpoints/$EXP/bake/emitter.pth \
   --cache_dir outputs/$EXP/shading \
   --dataset $DATASET $DATASET_ROOT$SCENE \
-  --has_part $HAS_PART --ldr_img_dir $LDR_IMG_DIR --val_frame $VAL_FRAME --SPP $SPP --spp $spp --lp 0.005 --la 0.01 --l_crf_weight 0.001 --crf_basis $CRF_BASIS
+  --has_part $HAS_PART --ldr_img_dir $LDR_IMG_DIR --val_frame $VAL_FRAME --SPP $SPP --spp $spp \
+  --batch_size $BATCH_SIZE --val_step $VAL_STEP --val_chunk_size $VAL_CHUNK_SIZE \
+  --lp 0.005 --la 0.01 --l_crf_weight 0.001 --crf_basis $CRF_BASIS
 
 mv checkpoints/$EXP/last.ckpt checkpoints/$EXP/last_0.ckpt
 
@@ -68,14 +76,15 @@ python train_emitter.py --experiment_name $EXP \
   --voxel_path checkpoints/$EXP/bake/vslf_0.npz \
   --emitter_path checkpoints/$EXP/bake/emitter.pth \
   --dataset $DATASET $DATASET_ROOT$SCENE \
-  --has_part $HAS_PART --ldr_img_dir $LDR_IMG_DIR --val_frame $VAL_FRAME --SPP $SPP --spp $spp --crf_basis $CRF_BASIS
+  --has_part $HAS_PART --ldr_img_dir $LDR_IMG_DIR --val_frame $VAL_FRAME --SPP $SPP --spp $spp \
+  --batch_size $BATCH_SIZE --val_step $VAL_STEP --val_chunk_size $VAL_CHUNK_SIZE --crf_basis $CRF_BASIS
 
 mv checkpoints/$EXP/last.ckpt checkpoints/$EXP/last_0.ckpt
 
 # extract emitter
-python extract_emitter_ldr.py --mode update --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --ckpt checkpoints/$EXP/last_0.ckpt --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR
+python extract_emitter_ldr.py --mode update --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --ckpt checkpoints/$EXP/last_0.ckpt --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR --has_part $HAS_PART
 
-# # refine shading
+# refine shading
 python refine_shading.py \
   --scene $DATASET_ROOT$SCENE --dataset $DATASET \
   --ldr_img_dir $LDR_IMG_DIR \
@@ -86,12 +95,14 @@ python refine_shading.py \
 
 # optimize BRDF, CRF
 python train_brdf_crf.py --experiment_name $EXP \
-  --max_epochs 2 --dir_val val_1 \
+  --max_epochs 4 --dir_val val_1 \
   --ckpt_path checkpoints/$EXP/init.ckpt \
   --voxel_path checkpoints/$EXP/bake/vslf_0.npz \
   --emitter_path checkpoints/$EXP/bake/emitter.pth \
   --cache_dir outputs/$EXP/shading \
   --dataset $DATASET $DATASET_ROOT$SCENE \
-  --has_part $HAS_PART --ldr_img_dir $LDR_IMG_DIR --val_frame $VAL_FRAME --SPP $SPP --spp $spp --lp 0.005 --la 0.01 --l_crf_weight 0.001 --crf_basis $CRF_BASIS
+  --has_part $HAS_PART --ldr_img_dir $LDR_IMG_DIR --val_frame $VAL_FRAME --SPP $SPP --spp $spp \
+  --batch_size $BATCH_SIZE --val_step $VAL_STEP --val_chunk_size $VAL_CHUNK_SIZE \
+  --lp 0.005 --la 0.01 --l_crf_weight 0.001 --crf_basis $CRF_BASIS
 
 mv checkpoints/$EXP/last.ckpt checkpoints/$EXP/last_1.ckpt
