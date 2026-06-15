@@ -68,6 +68,28 @@ def format_metric(value):
     return f"{value:.6f}"
 
 
+def load_rgb_image(path):
+    image = cv2.imread(path, -1)
+    if image is None:
+        raise FileNotFoundError(f"Failed to read image: {path}")
+    if image.ndim == 2:
+        image = image[..., None].repeat(3, axis=-1)
+    elif image.ndim != 3 or image.shape[2] != 3:
+        raise ValueError(f"Expected 2D or 3-channel image at {path}, got shape {image.shape}")
+    return image[..., [2, 1, 0]]
+
+
+def load_scalar_image(path):
+    image = cv2.imread(path, -1)
+    if image is None:
+        raise FileNotFoundError(f"Failed to read image: {path}")
+    if image.ndim == 2:
+        return image
+    if image.ndim == 3 and image.shape[2] == 3:
+        return image[..., 0]
+    raise ValueError(f"Expected 2D or 3-channel image at {path}, got shape {image.shape}")
+
+
 def evaluate_scene(scene, dataset_root, outputs_root, split, exp_prefix):
     gt_path = os.path.join(dataset_root, scene, split)
     method = f"{exp_prefix}{scene}"
@@ -106,29 +128,27 @@ def evaluate_scene(scene, dataset_root, outputs_root, split, exp_prefix):
     mse_emission = []
 
     for i in tqdm(range(image_num), desc=scene):
-        emission_gt = cv2.imread(
-            os.path.join(gt_path, "Emit", "{:03d}_0001.exr".format(i)), -1
-        )[..., [2, 1, 0]]
+        emission_gt = load_rgb_image(
+            os.path.join(gt_path, "Emit", "{:03d}_0001.exr".format(i))
+        )
         emission_gt = torch.from_numpy(emission_gt).float()
         emission_mask = emission_gt.sum(-1) > 0
 
-        albedo_gt = cv2.imread(
-            os.path.join(gt_path, "albedo", "{:03d}.exr".format(i)), -1
-        )[..., [2, 1, 0]]
+        albedo_gt = load_rgb_image(os.path.join(gt_path, "albedo", "{:03d}.exr".format(i)))
         albedo_gt = (
             torch.from_numpy(albedo_gt).float().clamp(0, 1).mul(255).long().float() / 255
         )
         albedo_gt[emission_mask] = 0
 
-        kd_gt = cv2.imread(
-            os.path.join(gt_path, "DiffCol", "{:03d}_0001.exr".format(i)), -1
-        )[..., [2, 1, 0]]
+        kd_gt = load_rgb_image(
+            os.path.join(gt_path, "DiffCol", "{:03d}_0001.exr".format(i))
+        )
         kd_gt = torch.from_numpy(kd_gt).float().clamp(0, 1).mul(255).long().float() / 255
         kd_gt[emission_mask] = 0
 
-        roughness_gt = cv2.imread(
-            os.path.join(gt_path, "Roughness", "{:03d}_0001.exr".format(i)), -1
-        )[..., 0]
+        roughness_gt = load_scalar_image(
+            os.path.join(gt_path, "Roughness", "{:03d}_0001.exr".format(i))
+        )
         roughness_gt = (
             torch.from_numpy(roughness_gt).float().mul(255).long().float() / 255
         ).clamp(0.2, 1)
@@ -137,27 +157,27 @@ def evaluate_scene(scene, dataset_root, outputs_root, split, exp_prefix):
         diff_mask = roughness_gt == 1
         kd_gt[~diff_mask] = 0
 
-        emission = cv2.imread(
-            os.path.join(method_path, "emission", "{:05d}_emission.exr".format(i)), -1
-        )[..., [2, 1, 0]]
+        emission = load_rgb_image(
+            os.path.join(method_path, "emission", "{:05d}_emission.exr".format(i))
+        )
         emission = torch.from_numpy(emission).float()
 
-        albedo = cv2.imread(
-            os.path.join(method_path, "a_prime", "{:05d}_a_prime.png".format(i)), -1
-        )[..., [2, 1, 0]]
+        albedo = load_rgb_image(
+            os.path.join(method_path, "a_prime", "{:05d}_a_prime.png".format(i))
+        )
         albedo = torch.from_numpy(albedo).float() / 255
         albedo[emission_mask] = 0
 
-        kd = cv2.imread(
-            os.path.join(method_path, "diffuse", "{:05d}_kd.png".format(i)), -1
-        )[..., [2, 1, 0]]
+        kd = load_rgb_image(
+            os.path.join(method_path, "diffuse", "{:05d}_kd.png".format(i))
+        )
         kd = torch.from_numpy(kd).float() / 255
         kd[emission_mask] = 0
         kd[~diff_mask] = 0
 
-        roughness = cv2.imread(
-            os.path.join(method_path, "roughness", "{:05d}_roughness.png".format(i)), -1
-        )[:, :, 0]
+        roughness = load_scalar_image(
+            os.path.join(method_path, "roughness", "{:05d}_roughness.png".format(i))
+        )
         roughness = (torch.from_numpy(roughness).float() / 255).clamp(0.2, 1)
         roughness[emission_mask] = 0
 
