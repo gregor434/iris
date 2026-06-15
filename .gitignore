@@ -7,6 +7,6 @@ notebooks/*
 /outputs_ldr/
 /checkpoints/
 /pretrained/
-/data/
+/data
 lightning_logs/
 *-Copy*
