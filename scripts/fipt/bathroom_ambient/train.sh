@@ -10,17 +10,17 @@ set -e
 DATASET_ROOT='./data/iris/datasets/fipt/indoor_synthetic/'
 DATASET='synthetic'
 # scene name
-SCENE='bathroom_debug'
+SCENE='bathroom_mi'
 LDR_IMG_DIR='Image'
-EXP='fipt_syn_bathroom_mi_debug'
-VAL_FRAME=39
+EXP='fipt_syn_bathroom_mi'
+VAL_FRAME=17
 CRF_BASIS=3
 VAL_CHUNK_SIZE=8192
 BATCH_SIZE=32768
 VAL_STEP=500
 # whether has part segmentation
 HAS_PART=1
-SPP=32
+SPP=128
 spp=32
 
 # bake surface light field (SLF)

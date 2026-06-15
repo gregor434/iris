@@ -95,4 +95,3 @@ python train_brdf_crf.py --experiment_name $EXP \
   --has_part $HAS_PART --ldr_img_dir $LDR_IMG_DIR --val_frame $VAL_FRAME --SPP $SPP --spp $spp --lp 0.005 --la 0.01 --l_crf_weight 0.001 --crf_basis $CRF_BASIS
 
 mv checkpoints/$EXP/last.ckpt checkpoints/$EXP/last_1.ckpt
-
