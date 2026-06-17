@@ -4,8 +4,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TRAIN_SCRIPTS=(
-  "${ROOT_DIR}/scripts/fipt/kitchen/train.sh"
-  "${ROOT_DIR}/scripts/fipt/livingroom/train.sh"
+  "${ROOT_DIR}/scripts/fipt/kitchen_mi/train.sh"
+  "${ROOT_DIR}/scripts/fipt/bedroom_mi/train.sh"
+  "${ROOT_DIR}/scripts/fipt/livingroom_mi/train.sh"
 )
 
 if [[ ${#TRAIN_SCRIPTS[@]} -eq 0 ]]; then

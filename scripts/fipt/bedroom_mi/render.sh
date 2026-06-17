@@ -8,10 +8,10 @@
 DATASET_ROOT='./data/iris/datasets/fipt/indoor_synthetic/'
 DATASET='synthetic'
 # scene name
-SCENE='bedroom'
+SCENE='bedroom_mi'
 LDR_IMG_DIR='Image'
-EXP='fipt_syn_bedroom'
-VAL_FRAME=10
+EXP='fipt_syn_bedroom_mi'
+VAL_FRAME=3
 CRF_BASIS=3
 # whether has part segmentation
 HAS_PART=1
