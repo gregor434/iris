@@ -23,7 +23,7 @@ python slf_bake.py --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake \
   --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR
 
 # extract emitter mask
-python extract_emitter_ldr.py --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR --threshold 0.99
+python extract_emitter_ldr.py --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR --has_part $HAS_PART --threshold 0.99
 
 python initialize.py --experiment_name $EXP --max_epochs 3 \
   --dataset $DATASET $DATASET_ROOT$SCENE \
@@ -34,7 +34,7 @@ python initialize.py --experiment_name $EXP --max_epochs 3 \
 mv checkpoints/$EXP/last.ckpt checkpoints/$EXP/init.ckpt
 
 # extract emitters
-python extract_emitter_ldr.py --mode update --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --ckpt checkpoints/$EXP/init.ckpt --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR
+python extract_emitter_ldr.py --mode update --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --ckpt checkpoints/$EXP/init.ckpt --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR --has_part $HAS_PART
 
 python bake_shading.py \
   --scene $DATASET_ROOT$SCENE --dataset $DATASET \
@@ -73,7 +73,7 @@ python train_emitter.py --experiment_name $EXP \
 mv checkpoints/$EXP/last.ckpt checkpoints/$EXP/last_0.ckpt
 
 # extract emitter
-python extract_emitter_ldr.py --mode update --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --ckpt checkpoints/$EXP/last_0.ckpt --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR
+python extract_emitter_ldr.py --mode update --scene $DATASET_ROOT$SCENE --output checkpoints/$EXP/bake --ckpt checkpoints/$EXP/last_0.ckpt --dataset $DATASET --ldr_img_dir $LDR_IMG_DIR --has_part $HAS_PART
 
 # # refine shading
 python refine_shading.py \
