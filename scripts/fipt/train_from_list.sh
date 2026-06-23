@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TRAIN_SCRIPTS=(
+  "${ROOT_DIR}/scripts/fipt/bathroom_mi/train.sh"
   "${ROOT_DIR}/scripts/fipt/kitchen_mi/train.sh"
   "${ROOT_DIR}/scripts/fipt/bedroom_mi/train.sh"
   "${ROOT_DIR}/scripts/fipt/livingroom_mi/train.sh"

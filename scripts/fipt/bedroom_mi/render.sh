@@ -11,13 +11,13 @@ DATASET='synthetic'
 SCENE='bedroom_mi'
 LDR_IMG_DIR='Image'
 EXP='fipt_syn_bedroom_mi'
-VAL_FRAME=3
+VAL_FRAME=7
 CRF_BASIS=3
 # whether has part segmentation
 HAS_PART=1
 SPP=256
 spp=16
-SPLIT=${SPLIT:-val}
+SPLIT=${SPLIT:-train}
 RELIGHT_SPLIT=${RELIGHT_SPLIT:-relight}
 RUN_RELIGHT=${RUN_RELIGHT:-0}
 

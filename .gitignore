@@ -11,3 +11,4 @@ notebooks/*
 lightning_logs/
 *-Copy*
 .env
+.vscode
