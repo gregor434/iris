@@ -1,0 +1,5 @@
+model,dataset,scene,split,gt_path,pred_path
+baseline,fipt_syn,bathroom,train,data/iris/datasets/fipt/indoor_synthetic/bathroom/train,outputs/fipt_syn_bathroom/output/train
+baseline_mi,fipt_syn,bathroom,train,data/iris/datasets/fipt/indoor_synthetic/bathroom/train,outputs/fipt_syn_bathroom_mi/output/train
+baseline,fipt_syn_mi,bathroom,train,data/iris/datasets/fipt/indoor_synthetic/bathroom_mi/train,outputs/fipt_syn_bathroom/output/train
+baseline_mi,fipt_syn_mi,bathroom,train,data/iris/datasets/fipt/indoor_synthetic/bathroom_mi/train,outputs/fipt_syn_bathroom_mi/output/train

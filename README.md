@@ -183,20 +183,37 @@ python render_relight.py --experiment_name $EXP --device 0\
 - For object insertion, the emitter geometry and average radiance are extracted with `scripts/extract_emitter.sh`. The assets for insertion can be downloaded [here](https://uofi.box.com/s/qe5lhq5c9f49fq76y46o6qq7lay6gsw6) and put under `outputs`.
 
 ## Evaluation
-The inverse rendering metric of FIPT synthetic scenes can be computed for one or more scenes:
-```bash
-python -m utils.metric_brdf bathroom kitchen
+The inverse rendering metric of FIPT synthetic scenes is evaluated from an explicit CSV manifest so the same dataset can be compared against outputs from different model versions.
+
+Example manifest:
+```csv
+model,dataset,scene,split,gt_path,pred_path
+baseline,fipt_syn,bathroom,train,data/iris/datasets/fipt/indoor_synthetic/bathroom/train,outputs/fipt_syn_bathroom/output/train
+v2,fipt_syn,bathroom,train,data/iris/datasets/fipt/indoor_synthetic/bathroom/train,outputs/fipt_syn_v2_bathroom/output/train
+baseline,fipt_syn,kitchen,train,data/iris/datasets/fipt/indoor_synthetic/kitchen/train,outputs/fipt_syn_kitchen/output/train
+v2,fipt_syn,kitchen,train,data/iris/datasets/fipt/indoor_synthetic/kitchen/train,outputs/fipt_syn_v2_kitchen/output/train
 ```
 
-The script resolves:
-- ground truth from `data/iris/datasets/fipt/indoor_synthetic/<scene>/<split>`
-- predictions from `outputs/fipt_syn_<scene>/output/<split>`
+Run the metric script directly:
+```bash
+python -m utils.metric_brdf \
+    --manifest metrics/fipt_brdf.csv \
+    --group-by model dataset \
+    --output-csv output/brdf_metrics.csv
+```
 
-By default it evaluates the `train` split, because the synthetic `val` split does not include the ground-truth `albedo/*.exr` files required by the metric script. It prints per-scene metrics and, when multiple scenes are given, an aggregated average over scenes.
+The manifest must contain at least `gt_path` and `pred_path`. Any additional columns are preserved in the per-row output and can be used as `--group-by` keys for aggregated comparisons. The script prints per-row metrics, an overall aggregate, grouped aggregates, and can export all rows plus summaries to CSV.
+
+You can also filter a manifest by split:
+```bash
+python -m utils.metric_brdf --manifest metrics/fipt_brdf.csv --split train --group-by model
+```
+
+The synthetic `val` split does not include the ground-truth `albedo/*.exr` files required by the metric script, so manifests should typically target `train`.
 
 A shell wrapper is also provided:
 ```bash
-bash scripts/fipt/eval_synthetic_brdf.sh bathroom kitchen
+bash scripts/fipt/eval_synthetic_brdf.sh --manifest metrics/fipt_brdf.csv --group-by model dataset
 ```
 
 ## Customized Data
