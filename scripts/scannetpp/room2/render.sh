@@ -17,7 +17,7 @@ RES_SCALE=0.5
 # whether has part segmentation
 HAS_PART=0
 SPP=256
-spp=16
+spp=256
 
 # render
 python render.py --experiment_name $EXP --device 0\
