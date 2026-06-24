@@ -18,10 +18,11 @@ os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
 import cv2
 
 
-METRIC_COLUMNS = ["kd", "albedo", "roughness", "emit_iou", "emit_log_mse"]
+METRIC_COLUMNS = ["kd", "albedo", "a_prime", "roughness", "emit_iou", "emit_log_mse"]
 REQUIRED_MANIFEST_COLUMNS = ["gt_path", "pred_path"]
-GT_SUBDIRS = ["Image", "albedo", "DiffCol", "Roughness", "Emit"]
-PRED_SUBDIRS = ["a_prime", "diffuse", "roughness", "emission"]
+REQUIRED_GT_AOVS = ["kd", "a_prime", "roughness", "emission"]
+OPTIONAL_GT_AOVS = ["albedo"]
+PRED_SUBDIRS = ["kd", "a_prime", "roughness", "emission"]
 
 
 def parse_args():
@@ -89,6 +90,51 @@ def load_scalar_image(path):
     if image.ndim == 3 and image.shape[2] == 3:
         return image[..., 0]
     raise ValueError(f"Expected 2D or 3-channel image at {path}, got shape {image.shape}")
+
+
+def first_existing_dir(*paths):
+    for path in paths:
+        if os.path.isdir(path):
+            return path
+    return None
+
+
+def resolve_gt_aov_dir(gt_path, aov_name, required=True):
+    legacy_names = {
+        "kd": "DiffCol",
+        "a_prime": "albedo",
+        "roughness": "Roughness",
+        "emission": "Emit",
+    }
+    candidates = [
+        os.path.join(gt_path, "aovs", aov_name),
+        os.path.join(gt_path, aov_name),
+    ]
+    if aov_name == "albedo":
+        candidates.append(os.path.join(gt_path, "albedo_pure"))
+    legacy_name = legacy_names.get(aov_name)
+    if legacy_name is not None:
+        candidates.append(os.path.join(gt_path, legacy_name))
+
+    directory = first_existing_dir(*candidates)
+    if directory is None and required:
+        raise FileNotFoundError(
+            f"Missing required GT AOV directory '{aov_name}'. Checked:\n"
+            + "\n".join(candidates)
+        )
+    return directory
+
+
+def resolve_rgb_count_dir(gt_path):
+    directory = first_existing_dir(
+        os.path.join(gt_path, "inputs", "hdr"),
+        os.path.join(gt_path, "aovs", "rgb"),
+        os.path.join(gt_path, "rgb"),
+        os.path.join(gt_path, "Image"),
+    )
+    if directory is None:
+        raise FileNotFoundError(f"Missing GT RGB/HDR frame directory under {gt_path}")
+    return directory
 
 
 def read_manifest(path):
@@ -165,8 +211,20 @@ def evaluate_row(row):
     gt_path = row["gt_path"]
     pred_path = row["pred_path"]
 
-    required_dirs = [os.path.join(gt_path, subdir) for subdir in GT_SUBDIRS]
-    required_dirs.extend(os.path.join(pred_path, subdir) for subdir in PRED_SUBDIRS)
+    gt_dirs = {
+        aov_name: resolve_gt_aov_dir(gt_path, aov_name)
+        for aov_name in REQUIRED_GT_AOVS
+    }
+    gt_dirs.update(
+        {
+            aov_name: resolve_gt_aov_dir(gt_path, aov_name, required=False)
+            for aov_name in OPTIONAL_GT_AOVS
+        }
+    )
+
+    required_dirs = [os.path.join(pred_path, subdir) for subdir in PRED_SUBDIRS]
+    if gt_dirs["albedo"] is not None:
+        required_dirs.append(os.path.join(pred_path, "albedo"))
     missing_dirs = [path for path in required_dirs if not os.path.isdir(path)]
     if missing_dirs:
         missing = "\n".join(missing_dirs)
@@ -177,40 +235,51 @@ def evaluate_row(row):
     image_num = len(
         [
             filename
-            for filename in os.listdir(os.path.join(gt_path, "Image"))
+            for filename in os.listdir(resolve_rgb_count_dir(gt_path))
             if not filename.startswith(".") and filename.endswith(".exr")
         ]
     )
 
     mse_roughness = []
     mse_albedo = []
-    mse_diff = []
+    mse_a_prime = []
+    mse_kd = []
     iou_emission = []
     mse_emission = []
 
     for frame_index in tqdm(range(image_num), desc=build_row_label(row)):
         emission_gt = load_rgb_image(
-            os.path.join(gt_path, "Emit", "{:03d}_0001.exr".format(frame_index))
+            os.path.join(gt_dirs["emission"], "{:03d}_0001.exr".format(frame_index))
         )
         emission_gt = torch.from_numpy(emission_gt).float()
         emission_mask = emission_gt.sum(-1) > 0
 
-        albedo_gt = load_rgb_image(
-            os.path.join(gt_path, "albedo", "{:03d}.exr".format(frame_index))
-        )
-        albedo_gt = (
-            torch.from_numpy(albedo_gt).float().clamp(0, 1).mul(255).long().float() / 255
-        )
-        albedo_gt[emission_mask] = 0
+        albedo_gt = None
+        if gt_dirs["albedo"] is not None:
+            albedo_gt = load_rgb_image(
+                os.path.join(gt_dirs["albedo"], "{:03d}.exr".format(frame_index))
+            )
+            albedo_gt = (
+                torch.from_numpy(albedo_gt).float().clamp(0, 1).mul(255).long().float() / 255
+            )
+            albedo_gt[emission_mask] = 0
 
         kd_gt = load_rgb_image(
-            os.path.join(gt_path, "DiffCol", "{:03d}_0001.exr".format(frame_index))
+            os.path.join(gt_dirs["kd"], "{:03d}_0001.exr".format(frame_index))
         )
         kd_gt = torch.from_numpy(kd_gt).float().clamp(0, 1).mul(255).long().float() / 255
         kd_gt[emission_mask] = 0
 
+        a_prime_gt = load_rgb_image(
+            os.path.join(gt_dirs["a_prime"], "{:03d}.exr".format(frame_index))
+        )
+        a_prime_gt = (
+            torch.from_numpy(a_prime_gt).float().clamp(0, 1).mul(255).long().float() / 255
+        )
+        a_prime_gt[emission_mask] = 0
+
         roughness_gt = load_scalar_image(
-            os.path.join(gt_path, "Roughness", "{:03d}_0001.exr".format(frame_index))
+            os.path.join(gt_dirs["roughness"], "{:03d}_0001.exr".format(frame_index))
         )
         roughness_gt = (
             torch.from_numpy(roughness_gt).float().mul(255).long().float() / 255
@@ -225,14 +294,22 @@ def evaluate_row(row):
         )
         emission = torch.from_numpy(emission).float()
 
-        albedo = load_rgb_image(
+        albedo = None
+        if albedo_gt is not None:
+            albedo = load_rgb_image(
+                os.path.join(pred_path, "albedo", "{:05d}_albedo.png".format(frame_index))
+            )
+            albedo = torch.from_numpy(albedo).float() / 255
+            albedo[emission_mask] = 0
+
+        a_prime = load_rgb_image(
             os.path.join(pred_path, "a_prime", "{:05d}_a_prime.png".format(frame_index))
         )
-        albedo = torch.from_numpy(albedo).float() / 255
-        albedo[emission_mask] = 0
+        a_prime = torch.from_numpy(a_prime).float() / 255
+        a_prime[emission_mask] = 0
 
         kd = load_rgb_image(
-            os.path.join(pred_path, "diffuse", "{:05d}_kd.png".format(frame_index))
+            os.path.join(pred_path, "kd", "{:05d}_kd.png".format(frame_index))
         )
         kd = torch.from_numpy(kd).float() / 255
         kd[emission_mask] = 0
@@ -256,16 +333,19 @@ def evaluate_row(row):
             )
 
         mse_roughness.append(NF.mse_loss(roughness, roughness_gt))
-        mse_albedo.append(NF.mse_loss(albedo, albedo_gt))
-        mse_diff.append(NF.mse_loss(kd, kd_gt))
+        if albedo is not None:
+            mse_albedo.append(NF.mse_loss(albedo, albedo_gt))
+        mse_a_prime.append(NF.mse_loss(a_prime, a_prime_gt))
+        mse_kd.append(NF.mse_loss(kd, kd_gt))
 
     result = dict(row)
     result.update(
         {
             "result_type": "row",
             "num_frames": image_num,
-            "kd": psnr_from_mse(mse_diff),
+            "kd": psnr_from_mse(mse_kd),
             "albedo": psnr_from_mse(mse_albedo),
+            "a_prime": psnr_from_mse(mse_a_prime),
             "roughness": psnr_from_mse(mse_roughness),
             "emit_iou": mean_or_nan(iou_emission),
             "emit_log_mse": mean_or_nan(mse_emission),

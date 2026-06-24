@@ -195,10 +195,11 @@ class ModelTrainer(pl.LightningModule):
         psnr = -10.0 * math.log10(loss_c.clamp_min(1e-5))
         loss = loss_c 
         
-        if self.dataset_name == 'synthetic':
+        if self.dataset_name == 'synthetic' and batch.get('has_albedo_gt', False):
             albedos_gt = batch['albedo'][valid]
             albedo_loss = NF.mse_loss(albedos_gt,albedo)
             self.log('train/albedo', albedo_loss)
+        if self.dataset_name == 'synthetic':
             roughness_gt = batch['roughness'][valid]
             roughness_loss = NF.mse_loss(roughness_gt, roughness.squeeze(-1))
             self.log('train/roughness', roughness_loss)
@@ -369,7 +370,7 @@ class ModelTrainer(pl.LightningModule):
         albedo[valid] = albedo_
         
         if self.dataset_name == 'synthetic':
-            albedo_gt = batch['albedo']
+            albedo_gt = batch['kd']
         else: # show rgb is no ground truth kd
             albedo_gt = rgb_gt.pow(1/GAMMA).clamp(0,1)
 

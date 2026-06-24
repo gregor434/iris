@@ -13,27 +13,34 @@ import cv2
 
 AOV_SPECS = {
     "rgb": {
-        "subdir": "Image",
+        "subdirs": ("inputs/hdr", "aovs/rgb", "rgb", "Image"),
+        "kind": "rgb",
+        "patterns": ("{frame:03d}_0001.exr",),
+    },
+    "kd": {
+        "subdirs": ("aovs/kd", "kd", "DiffCol"),
         "kind": "rgb",
         "patterns": ("{frame:03d}_0001.exr",),
     },
     "albedo": {
-        "subdir": "albedo",
+        "subdirs": ("aovs/albedo", "albedo_pure"),
         "kind": "rgb",
         "patterns": ("{frame:03d}.exr",),
+        "required": False,
     },
-    "kd": {
-        "subdir": "DiffCol",
+    "a_prime": {
+        "subdirs": ("aovs/a_prime", "a_prime", "albedo"),
         "kind": "rgb",
-        "patterns": ("{frame:03d}_0001.exr",),
+        "patterns": ("{frame:03d}.exr",),
+        "required": False,
     },
     "roughness": {
-        "subdir": "Roughness",
+        "subdirs": ("aovs/roughness", "roughness", "Roughness"),
         "kind": "scalar",
         "patterns": ("{frame:03d}_0001.exr",),
     },
-    "emit": {
-        "subdir": "Emit",
+    "emission": {
+        "subdirs": ("aovs/emission", "emission", "Emit"),
         "kind": "rgb",
         "patterns": ("{frame:03d}_0001.exr", "{frame:05d}_emission_nm.png"),
     },
@@ -83,10 +90,21 @@ def parse_frame_index(filename):
     return None
 
 
+def resolve_aov_dir(split_dir, spec, required=True):
+    for subdir in spec["subdirs"]:
+        candidate = split_dir / subdir
+        if candidate.is_dir():
+            return candidate
+    if required:
+        checked = "\n".join(str(split_dir / subdir) for subdir in spec["subdirs"])
+        raise FileNotFoundError(f"Missing required AOV directory. Checked:\n{checked}")
+    return None
+
+
 def list_available_frames(split_dir, spec):
-    aov_dir = split_dir / spec["subdir"]
-    if not aov_dir.is_dir():
-        raise FileNotFoundError(f"Missing required AOV directory: {aov_dir}")
+    aov_dir = resolve_aov_dir(split_dir, spec, required=spec.get("required", True))
+    if aov_dir is None:
+        return None
 
     frames = set()
     for path in aov_dir.iterdir():
@@ -101,13 +119,15 @@ def list_available_frames(split_dir, spec):
 
 
 def resolve_aov_path(split_dir, spec, frame_index):
-    aov_dir = split_dir / spec["subdir"]
+    aov_dir = resolve_aov_dir(split_dir, spec, required=spec.get("required", True))
+    if aov_dir is None:
+        return None
     for pattern in spec["patterns"]:
         candidate = aov_dir / pattern.format(frame=frame_index)
         if candidate.is_file():
             return candidate
     raise FileNotFoundError(
-        f"Missing frame {frame_index} for {spec['subdir']} under {aov_dir}"
+        f"Missing frame {frame_index} for {spec['subdirs']} under {aov_dir}"
     )
 
 
@@ -170,9 +190,11 @@ def format_metric(value):
 
 
 def gather_frame_indices(split_dir, requested_frames):
-    per_aov_frames = {
-        aov_name: list_available_frames(split_dir, spec) for aov_name, spec in AOV_SPECS.items()
-    }
+    per_aov_frames = {}
+    for aov_name, spec in AOV_SPECS.items():
+        frames = list_available_frames(split_dir, spec)
+        if frames is not None:
+            per_aov_frames[aov_name] = frames
     common_frames = set.intersection(*per_aov_frames.values())
     if not common_frames:
         raise ValueError(f"No common frames across required AOVs in {split_dir}")
@@ -217,6 +239,8 @@ def compare_datasets(dataset_a, dataset_b, split, requested_frames):
         for aov_name, spec in AOV_SPECS.items():
             path_a = resolve_aov_path(split_dir_a, spec, frame_index)
             path_b = resolve_aov_path(split_dir_b, spec, frame_index)
+            if path_a is None or path_b is None:
+                continue
 
             image_a = load_aov(path_a, spec["kind"])
             image_b = load_aov(path_b, spec["kind"])
@@ -243,6 +267,8 @@ def aggregate_rows(rows):
         mse_key = f"{aov_name}_mse"
         mae_key = f"{aov_name}_mae"
         max_value_key = f"{aov_name}_max_value"
+        if mse_key not in rows[0]:
+            continue
         aggregate[mse_key] = float(np.mean([row[mse_key] for row in rows]))
         aggregate[mae_key] = float(np.mean([row[mae_key] for row in rows]))
         aggregate[max_value_key] = max(row[max_value_key] for row in rows)
@@ -259,6 +285,8 @@ def print_aggregate_table(aggregate):
         mse_key = f"{aov_name}_mse"
         mae_key = f"{aov_name}_mae"
         psnr_key = f"{aov_name}_psnr"
+        if mse_key not in aggregate:
+            continue
         print(
             f"{aov_name:<8}   "
             f"{format_metric(aggregate[mse_key]):>9}   "
@@ -271,6 +299,8 @@ def print_per_frame_rows(rows):
     print("")
     header = ["frame"]
     for aov_name in AOV_SPECS:
+        if f"{aov_name}_mse" not in rows[0]:
+            continue
         header.extend(
             [f"{aov_name}_mse", f"{aov_name}_mae", f"{aov_name}_psnr"]
         )
@@ -288,6 +318,8 @@ def write_csv(rows, output_csv):
 
     fieldnames = ["frame"]
     for aov_name in AOV_SPECS:
+        if f"{aov_name}_mse" not in rows[0]:
+            continue
         fieldnames.extend(
             [f"{aov_name}_mse", f"{aov_name}_mae", f"{aov_name}_psnr"]
         )

@@ -185,17 +185,17 @@ class ModelTrainer(pl.LightningModule):
         for param in self.material.parameters():
             param.requires_grad = True 
 
-        segmentation = batch['segmentation'].long()
+        segmentation = batch['material_id'].long() if self.hparams.has_part else batch['segmentation'].long()
         seg_idxs,inv_idxs = segmentation.unique(return_inverse=True)
 
-        int_albedo = batch['int_albedo']
+        albedo_prior = batch['albedo_prior']
         weight_seg = torch.zeros(len(seg_idxs),device=seg_idxs.device)
         weight_seg_ = torch.ones_like(roughness).squeeze(-1).detach()
         weight_seg = torch_scatter.scatter(weight_seg_,inv_idxs,0,weight_seg,reduce='sum').unsqueeze(-1)
 
         mean_albedo = torch.zeros(len(seg_idxs), 3, device=seg_idxs.device)
         mean_albedo = torch_scatter.scatter(
-                    int_albedo*weight_seg_.unsqueeze(-1),inv_idxs,0,mean_albedo,reduce='sum')
+                    albedo_prior * weight_seg_.unsqueeze(-1),inv_idxs,0,mean_albedo,reduce='sum')
         mean_albedo = mean_albedo / weight_seg
         mean_albedo = mean_albedo[inv_idxs]
         loss_a = NF.mse_loss(albedo, mean_albedo)
@@ -204,10 +204,11 @@ class ModelTrainer(pl.LightningModule):
         # mask out emissive regionce
         # vsualize rendering brdf
         psnr = -10.0 * math.log10(loss_c.clamp_min(1e-5))
-        if self.dataset_name == 'synthetic':
+        if self.dataset_name == 'synthetic' and batch.get('has_albedo_gt', False):
             albedos_gt = batch['albedo']
             albedo_loss = NF.mse_loss(albedos_gt,albedo)
             self.log('init/albedo', albedo_loss)
+        if self.dataset_name == 'synthetic':
             roughness_gt = batch['roughness']
             roughness_loss = NF.mse_loss(roughness_gt, roughness.squeeze(-1))
             self.log('init/roughness', roughness_loss)
@@ -367,7 +368,7 @@ class ModelTrainer(pl.LightningModule):
         albedo[valid] = albedo_
         
         if self.dataset_name == 'synthetic':
-            albedo_gt = batch['albedo']
+            albedo_gt = batch['kd']
         else: # show rgb is no ground truth kd
             albedo_gt = rgb_gt.pow(1/GAMMA).clamp(0,1)
 

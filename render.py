@@ -142,7 +142,7 @@ def main():
     
     # create folders
     dir_out = {}
-    for name in ['rgb', 'diffuse', 'a_prime', 'roughness', 'metallic', 'emission', 'slf', 'merge']:
+    for name in ['rgb', 'kd', 'albedo', 'a_prime', 'roughness', 'metallic', 'emission', 'slf', 'merge']:
         d = Path(args.output_path) / args.split / name
         d.mkdir(exist_ok=True, parents=True)
         dir_out[name] = d
@@ -163,8 +163,9 @@ def main():
         dxdu,dydv = rays[...,6:9],rays[...,9:12]
 
         L_full = torch.zeros_like(rays_x)
-        kd = torch.zeros_like(rays_x)
-        a_prime = torch.zeros_like(rays_x)
+        pred_kd = torch.zeros_like(rays_x)
+        pred_albedo = torch.zeros_like(rays_x)
+        pred_a_prime = torch.zeros_like(rays_x)
         roughness = torch.zeros_like(rays_x[..., :1])
         metallic = torch.zeros_like(rays_x[..., :1])
         emission = torch.zeros_like(rays_x)
@@ -195,16 +196,16 @@ def main():
                     mat = material_net(positions)
 
                     # get brdf parameters
-                    albedo_ = mat['albedo']
+                    pred_albedo_ = mat['albedo']
                     metallic_ = mat['metallic']
                     roughness_ = mat['roughness']
-                    kd_ = albedo_*(1-metallic_)
-                    ks_ = 0.04*(1-metallic_) + albedo_*metallic_
+                    pred_kd_ = pred_albedo_ * (1 - metallic_)
+                    ks_ = 0.04*(1-metallic_) + pred_albedo_ * metallic_
 
                     # calculate material reflectance
                     _,_,g0,g1 = material_net.sample_specular(
                         torch.rand(len(metallic_),2,device=device),-ds,normals,roughness_)
-                    a_prime_ = g0*ks_+g1+kd_
+                    pred_a_prime_ = g0*ks_ + g1 + pred_kd_
 
                     # get emission
                     emission_ = emitter_net.eval_emitter(positions,ds,triagnle_idxs)[0]
@@ -215,14 +216,16 @@ def main():
 
                     # Set default values for emitter region
                     valid = torch.logical_and(valid, non_emit_mask)
-                    kd_[~valid] = 1.0
-                    a_prime_[~valid] = 1.0
+                    pred_kd_[~valid] = 1.0
+                    pred_albedo_[~valid] = 1.0
+                    pred_a_prime_[~valid] = 1.0
                     roughness_[~valid] = 1.0
                     metallic_[~valid] = 0.0
 
                     # scene intrinsics
-                    kd[b0:b1] += kd_.reshape(-1,spp,3).mean(1)
-                    a_prime[b0:b1] += a_prime_.reshape(-1,spp,3).mean(1)
+                    pred_kd[b0:b1] += pred_kd_.reshape(-1,spp,3).mean(1)
+                    pred_albedo[b0:b1] += pred_albedo_.reshape(-1,spp,3).mean(1)
+                    pred_a_prime[b0:b1] += pred_a_prime_.reshape(-1,spp,3).mean(1)
                     roughness[b0:b1] += roughness_.reshape(-1,spp,1).mean(1)
                     metallic[b0:b1] += metallic_.reshape(-1,spp,1).mean(1)
                     emission[b0:b1] += emission_.reshape(-1,spp,3).mean(1)
@@ -247,17 +250,23 @@ def main():
         psnr_list.append(psnr)
         ssim_list.append(ssim)
 
-        kd = kd.reshape(*img_hw,-1).cpu().numpy()/(SPP//spp)
-        path = dir_out['diffuse'] / '{:0>5d}_kd.exr'.format(i)
-        imageio.imwrite(path, kd)
-        path = dir_out['diffuse'] / '{:0>5d}_kd.png'.format(i)
-        save_image(kd, path)
+        pred_kd = pred_kd.reshape(*img_hw,-1).cpu().numpy()/(SPP//spp)
+        path = dir_out['kd'] / '{:0>5d}_kd.exr'.format(i)
+        imageio.imwrite(path, pred_kd)
+        path = dir_out['kd'] / '{:0>5d}_kd.png'.format(i)
+        save_image(pred_kd, path)
 
-        a_prime = a_prime.reshape(*img_hw,-1).cpu().numpy()/(SPP//spp)
+        pred_albedo = pred_albedo.reshape(*img_hw,-1).cpu().numpy()/(SPP//spp)
+        path = dir_out['albedo'] / '{:0>5d}_albedo.exr'.format(i)
+        imageio.imwrite(path, pred_albedo)
+        path = dir_out['albedo'] / '{:0>5d}_albedo.png'.format(i)
+        save_image(pred_albedo, path)
+
+        pred_a_prime = pred_a_prime.reshape(*img_hw,-1).cpu().numpy()/(SPP//spp)
         path = dir_out['a_prime'] / '{:0>5d}_a_prime.exr'.format(i)
-        imageio.imwrite(path, a_prime)
+        imageio.imwrite(path, pred_a_prime)
         path = dir_out['a_prime'] / '{:0>5d}_a_prime.png'.format(i)
-        save_image(a_prime, path)
+        save_image(pred_a_prime, path)
 
         roughness = roughness.reshape(*img_hw).cpu().numpy()/(SPP//spp)
         path = dir_out['roughness'] / '{:0>5d}_roughness.exr'.format(i)
@@ -283,7 +292,10 @@ def main():
         path = dir_out['emission'] / '{:0>5d}_emission.png'.format(i)
         save_image(emission, path)
         
-        merge = np.concatenate([L_gt, L_ldr, kd, a_prime, roughness, metallic, emission], axis=1)
+        merge = np.concatenate(
+            [L_gt, L_ldr, pred_kd, pred_albedo, pred_a_prime, roughness, metallic, emission],
+            axis=1,
+        )
         path = dir_out['merge'] / '{:0>5d}_merge.png'.format(i)
         save_image(merge, path)
 

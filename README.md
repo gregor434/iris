@@ -40,6 +40,71 @@ The package information details can be found in `environment.yml`.
   - While HDR images (`*.exr`) are not used by IRIS, they are also provided for FIPT scenes. 
 - Please download [checkpoints](https://uofi.box.com/s/64aor3xxzovnnf879cley89op5dde9ir) and put under `checkpoints`. We provide checkpoints of all the scenes in the dataset.
 
+Synthetic FIPT scenes use the following canonical scene layout:
+```text
+data/iris/datasets/fipt/indoor_synthetic/<scene>/
+  scene.obj
+  render_traj.npy                 # optional, for render_video.py
+  train.npy / val.npy             # optional split index metadata
+  train/
+    cameras/
+      transforms.json
+      exposure.npy                # optional, required for multi-exposure LDR inputs
+      crf.npy                     # optional, required with exposure.npy
+    inputs/
+      ldr/
+        000_0001.png
+      hdr/
+        000_0001.exr              # used for image size and diagnostics
+    aovs/
+      kd/
+        000_0001.exr
+      albedo/
+        000.exr                   # pure BSDF albedo, optional if unavailable
+      a_prime/
+        000.exr                   # integrated reflectance
+      roughness/
+        000_0001.exr
+      emission/
+        000_0001.exr
+    labels/
+      material_id/
+        000_0001.exr
+      segmentation/
+        000.exr                   # only if semantic segmentation exists
+    priors/
+      albedo/
+        000_0001.png              # single-view albedo prior used for supervision
+    metallic.npy                  # optional synthetic diagnostic/GT
+  val/
+    cameras/
+      transforms.json
+      exposure.npy
+      crf.npy
+    inputs/
+      ldr/
+        000_0001.png
+      hdr/
+        000_0001.exr
+    aovs/
+      kd/
+        000_0001.exr
+      a_prime/
+        000.exr                   # optional for validation/render-only splits
+      roughness/
+        000_0001.exr
+      emission/
+        000_0001.exr
+    labels/
+      material_id/
+        000_0001.exr
+    priors/
+      albedo/
+        000_0001.png
+```
+
+`material_id` is the synthetic material or part ID map. `segmentation` is reserved for semantic segmentation and should only exist when that signal is available. The current checked-in FIPT data still uses the legacy names `Image`, `DiffCol`, `Roughness`, `Emit`, `IndexMA`, split-level `albedo`, and `irisformer/albedo`; the synthetic loader accepts those as a migration fallback and maps them to `inputs/ldr`, `kd`, `roughness`, `emission`, `material_id`, `a_prime`, and `priors/albedo` respectively. Legacy data does not provide pure GT `aovs/albedo`, and some validation splits do not provide legacy `albedo`/`a_prime`; diagnostics for missing AOVs are skipped unless those directories exist.
+
 ## Training
 The training scripts are `scripts/{dataset}/{scene}/train.sh`. For example, please run the following to train at `bathroom2` scene in ScanNet++:
 ```bash
@@ -155,6 +220,22 @@ python render.py --experiment_name $EXP --device 0\
         --split 'test'\
         --SPP $SPP --spp $spp --crf_basis $CRF_BASIS 
 ```
+
+Predicted render outputs follow this canonical structure:
+```text
+outputs/{exp_name}/output/{split}/
+  rgb/
+  kd/
+  albedo/
+  a_prime/
+  roughness/
+  metallic/
+  emission/
+  slf/
+  merge/
+```
+
+Required BRDF stems are `00000_kd.*`, `00000_albedo.*`, `00000_a_prime.*`, `00000_roughness.*`, `00000_metallic.*`, and `00000_emission.*`. `rgb` may still use `rgb_full` in the filename, but the directory name remains `rgb`.
 2. Render videos of RGB, BRDF, and emission maps. The output is saved at `outputs/{exp_name}/video`:
 ```bash
 python render_video.py --experiment_name $EXP --device 0\
@@ -209,7 +290,7 @@ You can also filter a manifest by split:
 python -m utils.metric_brdf --manifest metrics/fipt_brdf.csv --split train --group-by model
 ```
 
-The synthetic `val` split does not include the ground-truth `albedo/*.exr` files required by the metric script, so manifests should typically target `train`.
+The metric expects GT and predicted AOVs to share the same canonical names: `kd`, `albedo`, `a_prime`, `roughness`, and `emission`. Pure GT `albedo` is optional for training diagnostics but required if the `albedo` metric is reported; legacy FIPT split-level `albedo/` is treated as `a_prime`, not pure albedo. Manifests should target splits that include every AOV being evaluated.
 
 A shell wrapper is also provided:
 ```bash
