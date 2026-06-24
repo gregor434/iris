@@ -60,7 +60,7 @@ data/iris/datasets/fipt/indoor_synthetic/<scene>/
       kd/
         000_0001.exr
       albedo/
-        000.exr                   # pure BSDF albedo, optional if unavailable
+        000_0001.exr              # converted legacy data uses DiffCol here
       a_prime/
         000.exr                   # integrated reflectance
       roughness/
@@ -89,6 +89,8 @@ data/iris/datasets/fipt/indoor_synthetic/<scene>/
     aovs/
       kd/
         000_0001.exr
+      albedo/
+        000_0001.exr              # converted legacy data uses DiffCol here
       a_prime/
         000.exr                   # optional for validation/render-only splits
       roughness/
@@ -103,7 +105,16 @@ data/iris/datasets/fipt/indoor_synthetic/<scene>/
         000_0001.png
 ```
 
-`material_id` is the synthetic material or part ID map. `segmentation` is reserved for semantic segmentation and should only exist when that signal is available. The current checked-in FIPT data still uses the legacy names `Image`, `DiffCol`, `Roughness`, `Emit`, `IndexMA`, split-level `albedo`, and `irisformer/albedo`; the synthetic loader accepts those as a migration fallback and maps them to `inputs/ldr`, `kd`, `roughness`, `emission`, `material_id`, `a_prime`, and `priors/albedo` respectively. Legacy data does not provide pure GT `aovs/albedo`, and some validation splits do not provide legacy `albedo`/`a_prime`; diagnostics for missing AOVs are skipped unless those directories exist.
+`material_id` is the synthetic material or part ID map. `segmentation` is reserved for semantic segmentation and should only exist when that signal is available. The current checked-in FIPT data still uses the legacy names `Image`, `DiffCol`, `Roughness`, `Emit`, `IndexMA`, split-level `albedo`, and `irisformer/albedo`; the synthetic loader accepts those as a migration fallback and maps them to `inputs/ldr`, `kd`, `roughness`, `emission`, `material_id`, `a_prime`, and `priors/albedo` respectively.
+
+To create a canonical copy of a legacy synthetic scene, run:
+```bash
+python -m utils.convert_synthetic_layout \
+    --src data/iris/datasets/fipt/indoor_synthetic/bathroom \
+    --dst data/iris/datasets/fipt/indoor_synthetic/bathroom_canonical
+```
+
+The converter copies files by default and fails if destination files already exist unless `--force` is passed. Legacy `DiffCol` is written to both canonical `aovs/kd` and canonical `aovs/albedo`. Legacy split-level `albedo` is written to canonical `aovs/a_prime` only when present; for example, non-`mi` validation splits typically omit `aovs/a_prime`. Legacy IRIS prior PNGs exist in both `Image/albedo` and `irisformer/albedo`; the converter verifies them and uses `Image/albedo` for `priors/albedo`.
 
 ## Training
 The training scripts are `scripts/{dataset}/{scene}/train.sh`. For example, please run the following to train at `bathroom2` scene in ScanNet++:

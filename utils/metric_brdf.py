@@ -20,9 +20,9 @@ import cv2
 
 METRIC_COLUMNS = ["kd", "albedo", "a_prime", "roughness", "emit_iou", "emit_log_mse"]
 REQUIRED_MANIFEST_COLUMNS = ["gt_path", "pred_path"]
-REQUIRED_GT_AOVS = ["kd", "a_prime", "roughness", "emission"]
-OPTIONAL_GT_AOVS = ["albedo"]
-PRED_SUBDIRS = ["kd", "a_prime", "roughness", "emission"]
+REQUIRED_GT_AOVS = ["kd", "roughness", "emission"]
+OPTIONAL_GT_AOVS = ["albedo", "a_prime"]
+PRED_SUBDIRS = ["kd", "roughness", "emission"]
 
 
 def parse_args():
@@ -141,6 +141,22 @@ def resolve_rgb_count_dir(gt_path):
     return directory
 
 
+def resolve_gt_frame_path(directory, frame_index, *patterns):
+    candidates = [
+        os.path.join(directory, pattern.format(frame_index))
+        for pattern in patterns
+    ]
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+    raise FileNotFoundError(
+        "Missing GT frame {}. Checked:\n{}".format(
+            frame_index,
+            "\n".join(candidates),
+        )
+    )
+
+
 def read_manifest(path):
     with open(path, newline="") as handle:
         reader = csv.DictReader(handle)
@@ -232,6 +248,8 @@ def evaluate_row(row):
     required_dirs = [os.path.join(pred_path, subdir) for subdir in PRED_SUBDIRS]
     if gt_dirs["albedo"] is not None:
         required_dirs.append(os.path.join(pred_path, "albedo"))
+    if gt_dirs["a_prime"] is not None:
+        required_dirs.append(os.path.join(pred_path, "a_prime"))
     missing_dirs = [path for path in required_dirs if not os.path.isdir(path)]
     if missing_dirs:
         missing = "\n".join(missing_dirs)
@@ -264,7 +282,12 @@ def evaluate_row(row):
         albedo_gt = None
         if gt_dirs["albedo"] is not None:
             albedo_gt = load_rgb_image(
-                os.path.join(gt_dirs["albedo"], "{:03d}.exr".format(frame_index))
+                resolve_gt_frame_path(
+                    gt_dirs["albedo"],
+                    frame_index,
+                    "{:03d}.exr",
+                    "{:03d}_0001.exr",
+                )
             )
             albedo_gt = (
                 torch.from_numpy(albedo_gt).float().clamp(0, 1).mul(255).long().float()
@@ -280,14 +303,21 @@ def evaluate_row(row):
         )
         kd_gt[emission_mask] = 0
 
-        a_prime_gt = load_rgb_image(
-            os.path.join(gt_dirs["a_prime"], "{:03d}.exr".format(frame_index))
-        )
-        a_prime_gt = (
-            torch.from_numpy(a_prime_gt).float().clamp(0, 1).mul(255).long().float()
-            / 255
-        )
-        a_prime_gt[emission_mask] = 0
+        a_prime_gt = None
+        if gt_dirs["a_prime"] is not None:
+            a_prime_gt = load_rgb_image(
+                resolve_gt_frame_path(
+                    gt_dirs["a_prime"],
+                    frame_index,
+                    "{:03d}.exr",
+                    "{:03d}_0001.exr",
+                )
+            )
+            a_prime_gt = (
+                torch.from_numpy(a_prime_gt).float().clamp(0, 1).mul(255).long().float()
+                / 255
+            )
+            a_prime_gt[emission_mask] = 0
 
         roughness_gt = load_scalar_image(
             os.path.join(gt_dirs["roughness"], "{:03d}_0001.exr".format(frame_index))
@@ -317,11 +347,15 @@ def evaluate_row(row):
             albedo = torch.from_numpy(albedo).float() / 255
             albedo[emission_mask] = 0
 
-        a_prime = load_rgb_image(
-            os.path.join(pred_path, "a_prime", "{:05d}_a_prime.png".format(frame_index))
-        )
-        a_prime = torch.from_numpy(a_prime).float() / 255
-        a_prime[emission_mask] = 0
+        a_prime = None
+        if a_prime_gt is not None:
+            a_prime = load_rgb_image(
+                os.path.join(
+                    pred_path, "a_prime", "{:05d}_a_prime.png".format(frame_index)
+                )
+            )
+            a_prime = torch.from_numpy(a_prime).float() / 255
+            a_prime[emission_mask] = 0
 
         kd = load_rgb_image(
             os.path.join(pred_path, "kd", "{:05d}_kd.png".format(frame_index))
@@ -353,7 +387,8 @@ def evaluate_row(row):
         mse_roughness.append(NF.mse_loss(roughness, roughness_gt))
         if albedo is not None:
             mse_albedo.append(NF.mse_loss(albedo, albedo_gt))
-        mse_a_prime.append(NF.mse_loss(a_prime, a_prime_gt))
+        if a_prime is not None:
+            mse_a_prime.append(NF.mse_loss(a_prime, a_prime_gt))
         mse_kd.append(NF.mse_loss(kd, kd_gt))
 
     result = dict(row)

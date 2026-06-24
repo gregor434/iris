@@ -25,7 +25,7 @@ AOV_SPECS = {
     "albedo": {
         "subdirs": ("aovs/albedo", "albedo_pure"),
         "kind": "rgb",
-        "patterns": ("{frame:03d}.exr",),
+        "patterns": ("{frame:03d}.exr", "{frame:03d}_0001.exr"),
         "required": False,
     },
     "a_prime": {
