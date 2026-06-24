@@ -301,7 +301,7 @@ You can also filter a manifest by split:
 python -m utils.metric_brdf --manifest metrics/fipt_brdf.csv --split train --group-by model
 ```
 
-The metric expects GT and predicted AOVs to share the same canonical names: `kd`, `albedo`, `a_prime`, `roughness`, and `emission`. Pure GT `albedo` is optional for training diagnostics but required if the `albedo` metric is reported; legacy FIPT split-level `albedo/` is treated as `a_prime`, not pure albedo. Manifests should target splits that include every AOV being evaluated.
+The metric expects GT and predicted AOVs to share the same canonical names: `kd`, `albedo`, `a_prime`, `roughness`, and `emission`. Pure GT `albedo` is optional for training diagnostics but required if the `albedo` metric is reported; legacy FIPT split-level `albedo/` is treated as `a_prime`, not pure albedo. Both `kd` and `albedo` PSNR are computed on diffuse, non-emissive pixels only (`roughness == 1` in GT). Manifests should target splits that include every AOV being evaluated.
 
 A shell wrapper is also provided:
 ```bash

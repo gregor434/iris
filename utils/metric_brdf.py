@@ -328,6 +328,8 @@ def evaluate_row(row):
         roughness_gt[emission_mask] = 0
 
         diff_mask = roughness_gt == 1
+        if albedo_gt is not None:
+            albedo_gt[~diff_mask] = 0
         kd_gt[~diff_mask] = 0
 
         emission = load_rgb_image(
@@ -346,6 +348,7 @@ def evaluate_row(row):
             )
             albedo = torch.from_numpy(albedo).float() / 255
             albedo[emission_mask] = 0
+            albedo[~diff_mask] = 0
 
         a_prime = None
         if a_prime_gt is not None:
