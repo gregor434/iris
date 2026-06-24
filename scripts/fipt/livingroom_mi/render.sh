@@ -11,7 +11,7 @@ DATASET='synthetic'
 SCENE='livingroom_mi'
 LDR_IMG_DIR='Image'
 EXP='fipt_syn_livingroom_mi'
-VAL_FRAME=39
+VAL_FRAME=11
 CRF_BASIS=3
 # whether has part segmentation
 HAS_PART=1
