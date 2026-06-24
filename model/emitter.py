@@ -54,21 +54,8 @@ class AreaEmitter(nn.Module):
         self.register_buffer("emitter_pdf", emitter_pdf)
         self.register_buffer("emitter_cdf", emitter_cdf)
 
-    def forward(self, triangle_idx):
-        """get emitter radiance
-        triangle_idx: B triangle indices
-        """
-        vis = triangle_idx != -1  # whether a valid triangle
-
-        is_area = self.is_emitter[triangle_idx] & vis
-        Le = torch.zeros(position.shape[0], 3, device=position.device)
-        if is_area.any():
-            e_idx = self.emitter_idx[triangle_idx[is_area]]
-            Le[is_area] = self.radiance[e_idx]
-
-        # assume zero background lighting
-        Le = Le * vis[..., None]
-        return Le
+    def forward(self, position, light_dir, triangle_idx, *args):
+        return self.eval_emitter(self, position, light_dir, triangle_idx, *args)
 
     def eval_emitter(self, position, light_dir, triangle_idx, *args):
         """evaluate surface emission and pdf
@@ -298,12 +285,9 @@ def test():
     emitter_gt_path = "outputs/0703_kitchen_hdr/bake/emitter.pth"
     emitter_gt = torch.load(emitter_gt_path, map_location="cpu")
     radiance_gt = emitter_gt["emitter_radiance"].numpy()
-    area_gt = emitter_gt["emitter_area"].numpy()
     emitter_learn_path = "outputs/0721_kitchen_init_albedo_1/bake/emitter.pth"
     emitter_learn = torch.load(emitter_learn_path, map_location="cpu")
     radiance_learn = emitter_learn["emitter_radiance"].numpy()
-    area_learn = emitter_learn["emitter_area"].numpy()
-    # print(radiance_gt.shape)
 
     radiance_gt = radiance_gt  # * area_gt[:, None] / area_gt.sum()
     radiance_learn = radiance_learn  # * area_learn[:, None] / area_learn.sum()
