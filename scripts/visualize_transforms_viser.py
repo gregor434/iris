@@ -131,7 +131,9 @@ def as_c2w_4x4(transform_matrix: Iterable[Iterable[float]]) -> np.ndarray:
         return c2w
     if mat.shape == (4, 4):
         return mat.copy()
-    raise ValueError(f"Expected transform_matrix shape (3, 4) or (4, 4), got {mat.shape}")
+    raise ValueError(
+        f"Expected transform_matrix shape (3, 4) or (4, 4), got {mat.shape}"
+    )
 
 
 def consumed_c2w(raw_c2w: np.ndarray, consumer: str) -> np.ndarray:
@@ -155,7 +157,9 @@ def wxyz_from_matrix(rotation: np.ndarray) -> np.ndarray:
     return quat_xyzw[[3, 0, 1, 2]]
 
 
-def infer_image_size(meta: dict, split_dir: Path, image_dir: str) -> tuple[int | None, int | None]:
+def infer_image_size(
+    meta: dict, split_dir: Path, image_dir: str
+) -> tuple[int | None, int | None]:
     width = meta.get("w") or meta.get("width")
     height = meta.get("h") or meta.get("height")
     if width is not None and height is not None:
@@ -237,11 +241,15 @@ def simplify_mesh_for_display(mesh: trimesh.Trimesh, max_faces: int) -> trimesh.
     if max_faces <= 0 or len(mesh.faces) <= max_faces:
         return mesh
 
-    print(f"[info] Simplifying mesh from {len(mesh.faces):,} to at most {max_faces:,} faces for viser.")
+    print(
+        f"[info] Simplifying mesh from {len(mesh.faces):,} to at most {max_faces:,} faces for viser."
+    )
     try:
         return mesh.simplify_quadric_decimation(face_count=max_faces)
     except Exception as exc:
-        print(f"[warn] Quadric simplification failed ({exc}); using deterministic face sampling.")
+        print(
+            f"[warn] Quadric simplification failed ({exc}); using deterministic face sampling."
+        )
         face_indices = np.linspace(0, len(mesh.faces) - 1, max_faces, dtype=np.int64)
         sampled = mesh.copy()
         sampled.update_faces(face_indices)
@@ -254,7 +262,13 @@ def scene_extent(mesh: trimesh.Trimesh | None, camera_positions: np.ndarray) -> 
     if mesh is not None and len(mesh.vertices):
         spans.append(float(np.linalg.norm(mesh.bounds[1] - mesh.bounds[0])))
     if len(camera_positions) > 1:
-        spans.append(float(np.linalg.norm(camera_positions.max(axis=0) - camera_positions.min(axis=0))))
+        spans.append(
+            float(
+                np.linalg.norm(
+                    camera_positions.max(axis=0) - camera_positions.min(axis=0)
+                )
+            )
+        )
     return max([span for span in spans if span > 0.0], default=1.0)
 
 
@@ -291,13 +305,19 @@ def main() -> None:
         meta = load_json(transforms_path)
         raw_poses = [as_c2w_4x4(frame["transform_matrix"]) for frame in meta["frames"]]
         consumed_poses = [consumed_c2w(pose, args.consumer) for pose in raw_poses]
-        positions = np.asarray([pose[:3, 3] for pose in consumed_poses], dtype=np.float64)
+        positions = np.asarray(
+            [pose[:3, 3] for pose in consumed_poses], dtype=np.float64
+        )
         all_positions.append(positions)
-        split_payloads.append((transforms_path, meta, raw_poses, consumed_poses, positions))
+        split_payloads.append(
+            (transforms_path, meta, raw_poses, consumed_poses, positions)
+        )
 
     mesh = simplify_mesh_for_display(load_mesh(scene_obj), args.max_faces)
 
-    camera_positions = np.concatenate(all_positions, axis=0) if all_positions else np.zeros((0, 3))
+    camera_positions = (
+        np.concatenate(all_positions, axis=0) if all_positions else np.zeros((0, 3))
+    )
     extent = scene_extent(mesh, camera_positions)
     frustum_scale = args.frustum_scale or extent * 0.03
     axes_scale = args.axes_scale or frustum_scale * 0.6
@@ -309,7 +329,9 @@ def main() -> None:
         print("  Viser frustums are converted with diag(-1, -1, 1) for OpenCV display.")
     else:
         print("  consumer=scannetpp: JSON Y/Z columns are flipped before use.")
-        print("  Consumed camera axes after conversion: OpenCV +X right, +Y down, +Z forward.")
+        print(
+            "  Consumed camera axes after conversion: OpenCV +X right, +Y down, +Z forward."
+        )
 
     server = viser.ViserServer(host=args.host, port=args.port)
     server.scene.world_axes.visible = True

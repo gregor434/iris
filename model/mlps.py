@@ -8,41 +8,44 @@ import torch
 import torch.nn as nn
 import math
 from const import set_random_seed
+
 set_random_seed()
 
 """ mlps """
 
+
 class PositionalEncoding(nn.Module):
     def __init__(self, L):
-        """ L: number of frequency bands """
+        """L: number of frequency bands"""
         super(PositionalEncoding, self).__init__()
-        self.L= L
-        
+        self.L = L
+
     def forward(self, inputs):
         L = self.L
         encoded = [inputs]
         for l in range(L):
-            encoded.append(torch.sin((2 ** l * math.pi) * inputs))
-            encoded.append(torch.cos((2 ** l * math.pi) * inputs))
+            encoded.append(torch.sin((2**l * math.pi) * inputs))
+            encoded.append(torch.cos((2**l * math.pi) * inputs))
         return torch.cat(encoded, -1)
 
 
 def mlp(dim_in, dims, dim_out):
-    """ create an MLP in format: dim_in->dims[0]->...->dims[-1]->dim_out"""
+    """create an MLP in format: dim_in->dims[0]->...->dims[-1]->dim_out"""
     lists = []
     dims = [dim_in] + dims
-    
-    for i in range(len(dims)-1):
-        lists.append(nn.Linear(dims[i],dims[i+1]))
+
+    for i in range(len(dims) - 1):
+        lists.append(nn.Linear(dims[i], dims[i + 1]))
         lists.append(nn.ReLU(inplace=True))
     lists.append(nn.Linear(dims[-1], dim_out))
-    
+
     return nn.Sequential(*lists)
 
 
 class ImplicitMLP(nn.Module):
-    """ NeRF style coordinate based MLP """
-    def __init__(self, D, C, S, dim_out, dim_enc,dim_in=3):
+    """NeRF style coordinate based MLP"""
+
+    def __init__(self, D, C, S, dim_out, dim_enc, dim_in=3):
         """
         Args:
             D: depth of the MLP
@@ -53,27 +56,27 @@ class ImplicitMLP(nn.Module):
         """
         super(ImplicitMLP, self).__init__()
         self.input_ch = dim_enc * 2 * dim_in + dim_in
-       
+
         self.D = D
         self.C = C
         self.skips = S
         self.dim_out = dim_out
-        
+
         self.point_encode = PositionalEncoding(dim_enc)
-        
+
         self.pts_linears = nn.ModuleList(
-            [nn.Linear(self.input_ch, self.C)] + 
-            [
-                nn.Linear(self.C, self.C) 
-                if i not in self.skips 
-                else nn.Linear(self.C + self.input_ch, self.C) 
-                for i in range(1, self.D) 
+            [nn.Linear(self.input_ch, self.C)]
+            + [
+                nn.Linear(self.C, self.C)
+                if i not in self.skips
+                else nn.Linear(self.C + self.input_ch, self.C)
+                for i in range(1, self.D)
             ]
         )
         self.feature_linear = nn.Linear(self.C, self.dim_out)
-        
+
     def forward(self, x):
-        """ 
+        """
         Args:
             x: Bx3 3D vertex locations
         Return:

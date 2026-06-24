@@ -7,6 +7,7 @@
 import numpy as np
 import mitsuba
 
+
 def sample_points_on_sphere(num_points, phase=0):
     """Uniformly sample points on a unit sphere using the Fibonacci lattice method."""
     points = []
@@ -23,25 +24,29 @@ def sample_points_on_sphere(num_points, phase=0):
 
     return np.array(points)
 
+
 def make_disco_ball(
-        scene_dict: dict,
-        position, 
-        radius,
-        light_intensity,
-        light_num=20,
-        light_radius_rate=0.1,
-        spot_intensity=10,
-        spot_cutoff_angle=20.0,
-        phase=0):
-    
-    colors = np.array([
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0],
-        [1.0, 1.0, 0.0],
-        [1.0, 0.0, 1.0],
-        [0.0, 1.0, 1.0],
-    ])
+    scene_dict: dict,
+    position,
+    radius,
+    light_intensity,
+    light_num=20,
+    light_radius_rate=0.1,
+    spot_intensity=10,
+    spot_cutoff_angle=20.0,
+    phase=0,
+):
+
+    colors = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [0.0, 1.0, 1.0],
+        ]
+    )
     position = np.array(position)
     points_unit = sample_points_on_sphere(light_num, phase)
     light_radius = radius * light_radius_rate
@@ -49,21 +54,20 @@ def make_disco_ball(
     points_sphere = points_unit * distance_from_center + position
 
     # make center ball
-    scene_dict.update({
-        'disco_ball': {
-            'type': 'sphere',
-            'to_world': mitsuba.ScalarTransform4f\
-                      .translate(position.tolist())\
-                      .scale([radius, radius, radius]),
-            'bsdf': {
-                'type': 'diffuse',
-                'reflectance': {
-                    'type': 'rgb',
-                    'value': [0.2, 0.2, 0.2]
-                }
-            },
+    scene_dict.update(
+        {
+            "disco_ball": {
+                "type": "sphere",
+                "to_world": mitsuba.ScalarTransform4f.translate(
+                    position.tolist()
+                ).scale([radius, radius, radius]),
+                "bsdf": {
+                    "type": "diffuse",
+                    "reflectance": {"type": "rgb", "value": [0.2, 0.2, 0.2]},
+                },
+            }
         }
-    })
+    )
 
     # make lights
     for i in range(light_num):
@@ -71,38 +75,28 @@ def make_disco_ball(
         light_value = colors[i % colors.shape[0]] * light_intensity
 
         light_config = {
-            'type': 'sphere',
-            'to_world': mitsuba.ScalarTransform4f\
-                      .translate(light_pos.tolist())\
-                      .scale([light_radius, light_radius, light_radius]),
-            'emitter': {
-                'type': 'area',
-                'radiance': {
-                    'type': 'rgb',
-                    'value': light_value.tolist()
-                }
-            }
+            "type": "sphere",
+            "to_world": mitsuba.ScalarTransform4f.translate(light_pos.tolist()).scale(
+                [light_radius, light_radius, light_radius]
+            ),
+            "emitter": {
+                "type": "area",
+                "radiance": {"type": "rgb", "value": light_value.tolist()},
+            },
         }
 
         spot_o = points_unit[i] * (radius + light_radius) + position
         spot_t = spot_o + points_unit[i]
         spot_value = colors[i % colors.shape[0]] * spot_intensity
         spot_config = {
-            'type': 'spot',
-            'to_world': mitsuba.ScalarTransform4f.look_at(
-                    origin=spot_o.tolist(),
-                    target=spot_t.tolist(),
-                    up=[0, 0, 1]
-                ),    # Light direction
-            'cutoff_angle': spot_cutoff_angle,        # Defines the angle of the light cone         # Inner angle with full intensity
-            'intensity': {
-                'type': 'rgb',
-                'value': spot_value.tolist()
-            }
+            "type": "spot",
+            "to_world": mitsuba.ScalarTransform4f.look_at(
+                origin=spot_o.tolist(), target=spot_t.tolist(), up=[0, 0, 1]
+            ),  # Light direction
+            "cutoff_angle": spot_cutoff_angle,  # Defines the angle of the light cone         # Inner angle with full intensity
+            "intensity": {"type": "rgb", "value": spot_value.tolist()},
         }
 
-
-        scene_dict.update({
-            'light_{}'.format(i): light_config,
-            'spot_{}'.format(i): spot_config
-        })
+        scene_dict.update(
+            {"light_{}".format(i): light_config, "spot_{}".format(i): spot_config}
+        )

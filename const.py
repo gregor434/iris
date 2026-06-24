@@ -8,7 +8,8 @@ import numpy as np
 import torch
 
 GAMMA = 2.2
-SEED=0
+SEED = 0
+
 
 def set_random_seed():
     np.random.seed(SEED)

@@ -77,7 +77,9 @@ def load_rgb_image(path):
     if image.ndim == 2:
         image = image[..., None].repeat(3, axis=-1)
     elif image.ndim != 3 or image.shape[2] != 3:
-        raise ValueError(f"Expected 2D or 3-channel image at {path}, got shape {image.shape}")
+        raise ValueError(
+            f"Expected 2D or 3-channel image at {path}, got shape {image.shape}"
+        )
     return image[..., [2, 1, 0]]
 
 
@@ -89,7 +91,9 @@ def load_scalar_image(path):
         return image
     if image.ndim == 3 and image.shape[2] == 3:
         return image[..., 0]
-    raise ValueError(f"Expected 2D or 3-channel image at {path}, got shape {image.shape}")
+    raise ValueError(
+        f"Expected 2D or 3-channel image at {path}, got shape {image.shape}"
+    )
 
 
 def first_existing_dir(*paths):
@@ -144,7 +148,9 @@ def read_manifest(path):
             raise ValueError(f"Manifest '{path}' is missing a header row.")
 
         missing_columns = [
-            column for column in REQUIRED_MANIFEST_COLUMNS if column not in reader.fieldnames
+            column
+            for column in REQUIRED_MANIFEST_COLUMNS
+            if column not in reader.fieldnames
         ]
         if missing_columns:
             raise ValueError(
@@ -176,7 +182,9 @@ def filter_manifest_rows(rows, split):
     if split is None:
         return rows
     if "split" not in rows[0]:
-        raise ValueError("Cannot use --split because the manifest does not define a 'split' column.")
+        raise ValueError(
+            "Cannot use --split because the manifest does not define a 'split' column."
+        )
     filtered_rows = [row for row in rows if row.get("split") == split]
     if not filtered_rows:
         raise ValueError(f"Manifest contains no rows with split='{split}'.")
@@ -212,8 +220,7 @@ def evaluate_row(row):
     pred_path = row["pred_path"]
 
     gt_dirs = {
-        aov_name: resolve_gt_aov_dir(gt_path, aov_name)
-        for aov_name in REQUIRED_GT_AOVS
+        aov_name: resolve_gt_aov_dir(gt_path, aov_name) for aov_name in REQUIRED_GT_AOVS
     }
     gt_dirs.update(
         {
@@ -260,21 +267,25 @@ def evaluate_row(row):
                 os.path.join(gt_dirs["albedo"], "{:03d}.exr".format(frame_index))
             )
             albedo_gt = (
-                torch.from_numpy(albedo_gt).float().clamp(0, 1).mul(255).long().float() / 255
+                torch.from_numpy(albedo_gt).float().clamp(0, 1).mul(255).long().float()
+                / 255
             )
             albedo_gt[emission_mask] = 0
 
         kd_gt = load_rgb_image(
             os.path.join(gt_dirs["kd"], "{:03d}_0001.exr".format(frame_index))
         )
-        kd_gt = torch.from_numpy(kd_gt).float().clamp(0, 1).mul(255).long().float() / 255
+        kd_gt = (
+            torch.from_numpy(kd_gt).float().clamp(0, 1).mul(255).long().float() / 255
+        )
         kd_gt[emission_mask] = 0
 
         a_prime_gt = load_rgb_image(
             os.path.join(gt_dirs["a_prime"], "{:03d}.exr".format(frame_index))
         )
         a_prime_gt = (
-            torch.from_numpy(a_prime_gt).float().clamp(0, 1).mul(255).long().float() / 255
+            torch.from_numpy(a_prime_gt).float().clamp(0, 1).mul(255).long().float()
+            / 255
         )
         a_prime_gt[emission_mask] = 0
 
@@ -290,14 +301,18 @@ def evaluate_row(row):
         kd_gt[~diff_mask] = 0
 
         emission = load_rgb_image(
-            os.path.join(pred_path, "emission", "{:05d}_emission.exr".format(frame_index))
+            os.path.join(
+                pred_path, "emission", "{:05d}_emission.exr".format(frame_index)
+            )
         )
         emission = torch.from_numpy(emission).float()
 
         albedo = None
         if albedo_gt is not None:
             albedo = load_rgb_image(
-                os.path.join(pred_path, "albedo", "{:05d}_albedo.png".format(frame_index))
+                os.path.join(
+                    pred_path, "albedo", "{:05d}_albedo.png".format(frame_index)
+                )
             )
             albedo = torch.from_numpy(albedo).float() / 255
             albedo[emission_mask] = 0
@@ -316,7 +331,9 @@ def evaluate_row(row):
         kd[~diff_mask] = 0
 
         roughness = load_scalar_image(
-            os.path.join(pred_path, "roughness", "{:05d}_roughness.png".format(frame_index))
+            os.path.join(
+                pred_path, "roughness", "{:05d}_roughness.png".format(frame_index)
+            )
         )
         roughness = (torch.from_numpy(roughness).float() / 255).clamp(0.2, 1)
         roughness[emission_mask] = 0
@@ -324,7 +341,8 @@ def evaluate_row(row):
         emission_mask_est = emission.sum(-1) > 0
         if emission_mask.any():
             iou = (
-                (emission_mask & emission_mask_est).sum() * 1.0
+                (emission_mask & emission_mask_est).sum()
+                * 1.0
                 / (emission_mask | emission_mask_est).sum()
             )
             iou_emission.append(iou)
@@ -413,15 +431,21 @@ def print_table(title, rows, columns):
     widths = []
     for column in columns:
         is_metric = column in METRIC_COLUMNS
-        cell_values = [format_cell(row.get(column, ""), is_metric=is_metric) for row in rows]
+        cell_values = [
+            format_cell(row.get(column, ""), is_metric=is_metric) for row in rows
+        ]
         widths.append(max(len(column), *(len(value) for value in cell_values)))
 
     print(title)
-    print("  " + " | ".join(column.ljust(width) for column, width in zip(columns, widths)))
+    print(
+        "  " + " | ".join(column.ljust(width) for column, width in zip(columns, widths))
+    )
     print("  " + "-+-".join("-" * width for width in widths))
     for row in rows:
         values = [
-            format_cell(row.get(column, ""), is_metric=(column in METRIC_COLUMNS)).ljust(width)
+            format_cell(
+                row.get(column, ""), is_metric=(column in METRIC_COLUMNS)
+            ).ljust(width)
             for column, width in zip(columns, widths)
         ]
         print("  " + " | ".join(values))
@@ -436,7 +460,11 @@ def write_csv(path, rows, field_order):
             serializable_row = {}
             for field in field_order:
                 value = row.get(field, "")
-                if field in METRIC_COLUMNS and isinstance(value, float) and math.isnan(value):
+                if (
+                    field in METRIC_COLUMNS
+                    and isinstance(value, float)
+                    and math.isnan(value)
+                ):
                     serializable_row[field] = "nan"
                 else:
                     serializable_row[field] = value
@@ -444,12 +472,16 @@ def write_csv(path, rows, field_order):
 
 
 def build_result_columns(fieldnames):
-    metadata_columns = [column for column in fieldnames if column not in REQUIRED_MANIFEST_COLUMNS]
+    metadata_columns = [
+        column for column in fieldnames if column not in REQUIRED_MANIFEST_COLUMNS
+    ]
     return ["manifest_row"] + metadata_columns + ["num_frames"] + METRIC_COLUMNS
 
 
 def build_export_columns(fieldnames):
-    return ["result_type", "manifest_row"] + fieldnames + ["num_frames"] + METRIC_COLUMNS
+    return (
+        ["result_type", "manifest_row"] + fieldnames + ["num_frames"] + METRIC_COLUMNS
+    )
 
 
 def main():

@@ -17,31 +17,34 @@ from scipy import interpolate
 from matplotlib import pyplot as plt
 from .emor import parse_dorf_curves, parse_emor_file
 from const import set_random_seed
+
 set_random_seed()
+
 
 def mono_increase_constraint(crf):
     diff = crf[1:] - crf[:-1]
     diff_min = diff.min()
-    gap = -diff_min if diff_min < 0 else 0 
-    diff += gap 
+    gap = -diff_min if diff_min < 0 else 0
+    diff += gap
     diff /= diff.sum()
     crf = torch.cumsum(diff, dim=0)
     crf = torch.cat([torch.zeros((1), device=crf.device), crf])
     return crf
+
 
 class EmorCRF(nn.Module):
     def __init__(self, dim=11):
         super().__init__()
         self.dim = dim
         names, vectors = parse_emor_file(inv=False)
-        self.register_buffer('f0', torch.FloatTensor(vectors[1])[None])
-        self.register_buffer('basis', torch.FloatTensor(vectors[2:2+dim]))
+        self.register_buffer("f0", torch.FloatTensor(vectors[1])[None])
+        self.register_buffer("basis", torch.FloatTensor(vectors[2 : 2 + dim]))
         self.weight = nn.Parameter(torch.zeros(3, dim))
-    
+
     def get_crf(self):
         crf = self.f0 + self.weight @ self.basis
         return crf
-    
+
     def get_inv_crf(self):
         crf = self.get_crf()
         inv_crf = []
@@ -55,24 +58,24 @@ class EmorCRF(nn.Module):
         return inv_crf
 
     def initialize_weight(self, crf):
-        weight = self.cal_weight_fitting_crf(crf) #(3, dim)
+        weight = self.cal_weight_fitting_crf(crf)  # (3, dim)
         self.weight = nn.Parameter(torch.FloatTensor(weight).to(self.weight.device))
 
     def cal_weight_fitting_crf(self, crf):
         f0 = self.f0.detach().cpu().numpy()
         basis = self.basis.detach().cpu().numpy().T
         pseudo_inverse = np.linalg.inv(basis.T @ basis) @ basis.T
-        weight = pseudo_inverse @ (crf - f0).T 
+        weight = pseudo_inverse @ (crf - f0).T
         return weight.T
-    
+
     def forward(self, hdr, exposure):
-        '''
+        """
         Input:
             hdr: (n, 3)
         Return:
             ldr: (n, 3)
-        '''
-        hdr = torch.clip(hdr*exposure, 0, 1)
+        """
+        hdr = torch.clip(hdr * exposure, 0, 1)
         crf = self.get_crf()
         x = torch.linspace(0, 1, crf.size(1)).to(self.weight.device)
         ldr = []
@@ -84,14 +87,14 @@ class EmorCRF(nn.Module):
             ldr.append(ldr_ch)
         ldr = torch.stack(ldr, dim=-1)
         return ldr
-    
+
     def inverse(self, ldr, exposure):
-        '''
+        """
         Input:
             ldr: (n, 3)
         Return:
             hdr: (n, 3)
-        '''
+        """
         ldr = torch.clip(ldr, 0, 1)
         inv_crf = self.get_inv_crf()
         x = torch.linspace(0, 1, inv_crf.size(1)).to(self.weight.device)
@@ -106,17 +109,17 @@ class EmorCRF(nn.Module):
         return hdr
 
     def reg_weight(self):
-        loss = torch.mean(self.weight ** 2)
+        loss = torch.mean(self.weight**2)
         return loss
-    
+
     def reg_monotonically_increasing(self):
-        crf = self.get_crf() #(3, 1024)
-        diff = crf[:, 1:] - crf[:, :-1] # should be all positive
+        crf = self.get_crf()  # (3, 1024)
+        diff = crf[:, 1:] - crf[:, :-1]  # should be all positive
         loss = torch.sum(F.relu(-diff))
         return loss
-    
+
     def reg_smoothness(self):
         crf = self.get_crf()
         smoothness = crf[:, :-2] + crf[:, 2:] - 2 * crf[:, 1:-1]
-        loss = torch.mean(smoothness ** 2)
+        loss = torch.mean(smoothness**2)
         return loss

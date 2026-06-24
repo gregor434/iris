@@ -9,13 +9,14 @@ import cv2
 import os
 from tqdm import tqdm
 
+
 def main():
     parser = ArgumentParser()
-    parser.add_argument('--input', type=str, required=True)
-    parser.add_argument('--output', type=str, required=True)
-    parser.add_argument('--max_width', type=int, default=1024)
+    parser.add_argument("--input", type=str, required=True)
+    parser.add_argument("--output", type=str, required=True)
+    parser.add_argument("--max_width", type=int, default=1024)
     args = parser.parse_args()
-    
+
     os.makedirs(args.output, exist_ok=True)
     img_names = sorted([name for name in os.listdir(args.input)])
 
@@ -27,5 +28,6 @@ def main():
             img = cv2.resize(img, (w_new, h_new))
         cv2.imwrite(os.path.join(args.output, name), img)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

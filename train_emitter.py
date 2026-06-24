@@ -5,7 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-torch.set_float32_matmul_precision('high')
+
+torch.set_float32_matmul_precision("high")
 import torch.nn.functional as NF
 import torch.optim as optim
 from torch.utils.data import DataLoader
@@ -17,7 +18,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 import mitsuba
-mitsuba.set_variant('cuda_ad_rgb')
+
+mitsuba.set_variant("cuda_ad_rgb")
 
 import math
 import numpy as np
@@ -25,7 +27,12 @@ import os
 from pathlib import Path
 from argparse import Namespace, ArgumentParser
 from configs.config import default_options
-from utils.dataset import InvRealDatasetLDR,RealDatasetLDR,InvSyntheticDatasetLDR,SyntheticDatasetLDR
+from utils.dataset import (
+    InvRealDatasetLDR,
+    RealDatasetLDR,
+    InvSyntheticDatasetLDR,
+    SyntheticDatasetLDR,
+)
 from utils.dataset.scannetpp.dataset import Scannetpp, InvScannetpp
 from utils.ops import *
 from utils.path_tracing import ray_intersect, path_tracing, path_tracing_single
@@ -36,138 +43,196 @@ from crf.model_crf import EmorCRF
 from crf.plot import plot_crfs, plot_weights
 from render import save_image
 from const import GAMMA, set_random_seed
+
 set_random_seed()
 
+
 class ModelTrainer(pl.LightningModule):
-    """ BRDF-emission mask training code """
+    """BRDF-emission mask training code"""
+
     def __init__(self, hparams: Namespace, *args, **kwargs):
         super(ModelTrainer, self).__init__()
         self.save_hyperparameters(hparams)
-        
+
         dataset, dataset_root = hparams.dataset
         scene = hparams.scene
-        if dataset in ['synthetic', 'real']:
-            mesh_path = os.path.join(dataset_root,'scene.obj')
-            mesh_type = 'obj'
-        elif dataset == 'scannetpp':
-            mesh_path = os.path.join(dataset_root, 'data', scene, 'scans', 'scene.ply')
-            mesh_type = 'ply'
-        assert Path(mesh_path).exists(), 'mesh not found: '+mesh_path
+        if dataset in ["synthetic", "real"]:
+            mesh_path = os.path.join(dataset_root, "scene.obj")
+            mesh_type = "obj"
+        elif dataset == "scannetpp":
+            mesh_path = os.path.join(dataset_root, "data", scene, "scans", "scene.ply")
+            mesh_type = "ply"
+        assert Path(mesh_path).exists(), "mesh not found: " + mesh_path
         # load scene geometry
-        self.scene = mitsuba.load_dict({
-            'type': 'scene',
-            'shape_id':{
-                'type': mesh_type,
-                'filename': mesh_path
-            }
-        })
+        self.scene = mitsuba.load_dict(
+            {"type": "scene", "shape_id": {"type": mesh_type, "filename": mesh_path}}
+        )
 
         # initiallize BRDF
-        mask = torch.load(hparams.voxel_path,map_location='cpu')
-        material_net = NGPBRDF(mask['voxel_min'],mask['voxel_max'])
+        mask = torch.load(hparams.voxel_path, map_location="cpu")
+        material_net = NGPBRDF(mask["voxel_min"], mask["voxel_max"])
         if hparams.ckpt_path:
-            state_dict = torch.load(hparams.ckpt_path, map_location='cpu')['state_dict']
+            state_dict = torch.load(hparams.ckpt_path, map_location="cpu")["state_dict"]
             weight = {}
-            for k,v in state_dict.items():
-                if 'material.' in k:
-                    weight[k.replace('material.','')]=v
+            for k, v in state_dict.items():
+                if "material." in k:
+                    weight[k.replace("material.", "")] = v
             material_net.load_state_dict(weight)
         for p in material_net.parameters():
-            p.requires_grad=False
+            p.requires_grad = False
         self.material = material_net
-       
+
         # initialize emission mask
         emitter = SLFEmitterLearn(
-            emitter_path=hparams.emitter_path,
-            slf_path=hparams.voxel_path
+            emitter_path=hparams.emitter_path, slf_path=hparams.voxel_path
         )
         self.emitter = emitter
 
         model_crf = EmorCRF(dim=hparams.crf_basis)
         if hparams.ckpt_path:
-            state_dict = torch.load(hparams.ckpt_path, map_location='cpu')['state_dict']
+            state_dict = torch.load(hparams.ckpt_path, map_location="cpu")["state_dict"]
             weight = {}
-            for k,v in state_dict.items():
-                if 'model_crf.' in k:
-                    weight[k.replace('model_crf.','')]=v
+            for k, v in state_dict.items():
+                if "model_crf." in k:
+                    weight[k.replace("model_crf.", "")] = v
             model_crf.load_state_dict(weight)
         for p in model_crf.parameters():
-            p.requires_grad=False
+            p.requires_grad = False
         self.model_crf = model_crf
 
     def __repr__(self):
         return repr(self.hparams)
 
     def configure_optimizers(self):
-        if(self.hparams.optimizer == 'SGD'):
+        if self.hparams.optimizer == "SGD":
             opt = optim.SGD
-        if(self.hparams.optimizer == 'Adam'):
+        if self.hparams.optimizer == "Adam":
             opt = optim.Adam
-        
-        optimizer = opt(self.parameters(), lr=self.hparams.learning_rate, weight_decay=self.hparams.weight_decay)    
-        scheduler = optim.lr_scheduler.MultiStepLR(optimizer,milestones=self.hparams.milestones,gamma=self.hparams.scheduler_rate)
+
+        optimizer = opt(
+            self.parameters(),
+            lr=self.hparams.learning_rate,
+            weight_decay=self.hparams.weight_decay,
+        )
+        scheduler = optim.lr_scheduler.MultiStepLR(
+            optimizer,
+            milestones=self.hparams.milestones,
+            gamma=self.hparams.scheduler_rate,
+        )
         return [optimizer], [scheduler]
-    
-    def train_dataloader(self,):
-        dataset_name,dataset_path = self.hparams.dataset
-        if dataset_name == 'synthetic':
-            dataset = InvSyntheticDatasetLDR(dataset_path,img_dir=hparams.ldr_img_dir,pixel=True,split='train',
-                                       batch_size=self.hparams.batch_size,has_part=self.hparams.has_part)
-        elif dataset_name == 'real':
-            dataset = InvRealDatasetLDR(dataset_path,img_dir=hparams.ldr_img_dir,pixel=True,split='train',
-                                       batch_size=self.hparams.batch_size)
-        elif dataset_name == 'scannetpp':
+
+    def train_dataloader(
+        self,
+    ):
+        dataset_name, dataset_path = self.hparams.dataset
+        if dataset_name == "synthetic":
+            dataset = InvSyntheticDatasetLDR(
+                dataset_path,
+                img_dir=hparams.ldr_img_dir,
+                pixel=True,
+                split="train",
+                batch_size=self.hparams.batch_size,
+                has_part=self.hparams.has_part,
+            )
+        elif dataset_name == "real":
+            dataset = InvRealDatasetLDR(
+                dataset_path,
+                img_dir=hparams.ldr_img_dir,
+                pixel=True,
+                split="train",
+                batch_size=self.hparams.batch_size,
+            )
+        elif dataset_name == "scannetpp":
             scene = self.hparams.scene
-            dataset = InvScannetpp(dataset_path, scene, pixel=True, split='train',
-                                   batch_size=self.hparams.batch_size, res_scale=hparams.res_scale)
+            dataset = InvScannetpp(
+                dataset_path,
+                scene,
+                pixel=True,
+                split="train",
+                batch_size=self.hparams.batch_size,
+                res_scale=hparams.res_scale,
+            )
         self.train_dataset = dataset
-        self.train_loader = DataLoader(dataset, batch_size=None, num_workers=self.hparams.num_workers)
+        self.train_loader = DataLoader(
+            dataset, batch_size=None, num_workers=self.hparams.num_workers
+        )
         return self.train_loader
-       
-    def on_train_epoch_start(self,):
-        """ resample training batch """
+
+    def on_train_epoch_start(
+        self,
+    ):
+        """resample training batch"""
         self.train_loader.dataset.resample()
-    
-    def val_dataloader(self,):
-        dataset_name,dataset_path = self.hparams.dataset
+
+    def val_dataloader(
+        self,
+    ):
+        dataset_name, dataset_path = self.hparams.dataset
         self.dataset_name = dataset_name
-        if dataset_name == 'synthetic':
-            dataset = SyntheticDatasetLDR(dataset_path,img_dir=hparams.ldr_img_dir,pixel=False,split='val',ray_diff=True, val_frame=self.hparams.val_frame)
-        elif dataset_name == 'real':
-            dataset = RealDatasetLDR(dataset_path,img_dir=hparams.ldr_img_dir,pixel=False,split='val',ray_diff=True, val_frame=self.hparams.val_frame)
-        elif dataset_name == 'scannetpp':
+        if dataset_name == "synthetic":
+            dataset = SyntheticDatasetLDR(
+                dataset_path,
+                img_dir=hparams.ldr_img_dir,
+                pixel=False,
+                split="val",
+                ray_diff=True,
+                val_frame=self.hparams.val_frame,
+            )
+        elif dataset_name == "real":
+            dataset = RealDatasetLDR(
+                dataset_path,
+                img_dir=hparams.ldr_img_dir,
+                pixel=False,
+                split="val",
+                ray_diff=True,
+                val_frame=self.hparams.val_frame,
+            )
+        elif dataset_name == "scannetpp":
             scene = self.hparams.scene
-            dataset = Scannetpp(dataset_path, scene, pixel=False, split='test', ray_diff=True, val_frame=self.hparams.val_frame, res_scale=hparams.res_scale)
+            dataset = Scannetpp(
+                dataset_path,
+                scene,
+                pixel=False,
+                split="test",
+                ray_diff=True,
+                val_frame=self.hparams.val_frame,
+                res_scale=hparams.res_scale,
+            )
         self.img_hw = dataset.img_hw
         self.val_dataset = dataset
-        self.val_loader = DataLoader(dataset, shuffle=False, batch_size=None, num_workers=self.hparams.num_workers)
+        self.val_loader = DataLoader(
+            dataset,
+            shuffle=False,
+            batch_size=None,
+            num_workers=self.hparams.num_workers,
+        )
         return self.val_loader
 
     def forward(self, points, view):
         return
 
-    def gamma(self,x):
-        """ tone mapping function """
+    def gamma(self, x):
+        """tone mapping function"""
         mask = x <= 0.0031308
         ret = torch.empty_like(x)
-        ret[mask] = 12.92*x[mask]
+        ret[mask] = 12.92 * x[mask]
         mask = ~mask
-        ret[mask] = 1.055*x[mask].pow(1/2.4) - 0.055
+        ret[mask] = 1.055 * x[mask].pow(1 / 2.4) - 0.055
         return ret
-    
+
     def training_step(self, batch, batch_idx):
-        """ one training step """
-        rays,rgbs_gt = batch['rays'], batch['rgbs']
-        xs,ds = rays[...,:3],rays[...,3:6]
-        ds = NF.normalize(ds,dim=-1)
-        dxdu,dydv = rays[...,6:9],rays[...,9:12]
-        
+        """one training step"""
+        rays, rgbs_gt = batch["rays"], batch["rgbs"]
+        xs, ds = rays[..., :3], rays[..., 3:6]
+        ds = NF.normalize(ds, dim=-1)
+        dxdu, dydv = rays[..., 6:9], rays[..., 9:12]
+
         # find surface intersection
-        positions,normals,_,triangle_idx,valid = ray_intersect(self.scene,xs,ds)
+        positions, normals, _, triangle_idx, valid = ray_intersect(self.scene, xs, ds)
 
         if not valid.any():
             return None
-        
+
         rgbs_gt = rgbs_gt[valid]
         positions = positions[valid]
         xs, ds = xs[valid], ds[valid]
@@ -175,38 +240,37 @@ class ModelTrainer(pl.LightningModule):
 
         # get brdf
         mat = self.material(positions)
-        albedo,metallic,roughness = mat['albedo'],mat['metallic'],mat['roughness']
+        albedo, metallic, roughness = mat["albedo"], mat["metallic"], mat["roughness"]
 
         # optimize only valid surface
         SPP = self.hparams.SPP
         spp = self.hparams.spp
         L = torch.zeros_like(xs)
-        for _ in range(SPP//spp):
+        for _ in range(SPP // spp):
             L += path_tracing_single(
-                self.scene, self.emitter, self.material,
-                xs, ds, dxdu, dydv, spp
+                self.scene, self.emitter, self.material, xs, ds, dxdu, dydv, spp
             )
-        L = L / (SPP//spp)
-        
-        exposure = batch['exposure'][valid]
+        L = L / (SPP // spp)
+
+        exposure = batch["exposure"][valid]
         rgbs_ldr = self.model_crf(L, exposure)
         loss_c = NF.mse_loss(rgbs_ldr, rgbs_gt)
-        
-        psnr = -10.0 * math.log10(loss_c.clamp_min(1e-5))
-        loss = loss_c 
-        
-        if self.dataset_name == 'synthetic' and batch.get('has_albedo_gt', False):
-            albedos_gt = batch['albedo'][valid]
-            albedo_loss = NF.mse_loss(albedos_gt,albedo)
-            self.log('train/albedo', albedo_loss)
-        if self.dataset_name == 'synthetic':
-            roughness_gt = batch['roughness'][valid]
-            roughness_loss = NF.mse_loss(roughness_gt, roughness.squeeze(-1))
-            self.log('train/roughness', roughness_loss)
 
-        self.log('train/loss', loss)
-        self.log('train/loss_c', loss_c)
-        self.log('train/psnr', psnr)
+        psnr = -10.0 * math.log10(loss_c.clamp_min(1e-5))
+        loss = loss_c
+
+        if self.dataset_name == "synthetic" and batch.get("has_albedo_gt", False):
+            albedos_gt = batch["albedo"][valid]
+            albedo_loss = NF.mse_loss(albedos_gt, albedo)
+            self.log("train/albedo", albedo_loss)
+        if self.dataset_name == "synthetic":
+            roughness_gt = batch["roughness"][valid]
+            roughness_loss = NF.mse_loss(roughness_gt, roughness.squeeze(-1))
+            self.log("train/roughness", roughness_loss)
+
+        self.log("train/loss", loss)
+        self.log("train/loss_c", loss_c)
+        self.log("train/psnr", psnr)
 
         return loss
 
@@ -216,7 +280,7 @@ class ModelTrainer(pl.LightningModule):
             val_frame = self.val_dataset.val_frame
             batch = self.val_dataset[val_frame]
             self.validation(batch)
-    
+
     def validation(self, batch):
         # print('[val in training]')
         SPP = self.hparams.SPP
@@ -224,17 +288,19 @@ class ModelTrainer(pl.LightningModule):
         img_hw = self.img_hw
         chunk_size = self.hparams.val_chunk_size
         denoiser = mitsuba.OptixDenoiser(img_hw[::-1])
-        dir_val = os.path.join('outputs', self.hparams.experiment_name, self.hparams.dir_val)
+        dir_val = os.path.join(
+            "outputs", self.hparams.experiment_name, self.hparams.dir_val
+        )
         os.makedirs(dir_val, exist_ok=True)
-            
+
         device = torch.device(0)
-        rays,rgbs_gt = batch['rays'].to(device), batch['rgbs']
-        rays_o, rays_d = rays[...,:3],rays[...,3:6]
-        rays_d = NF.normalize(rays_d,dim=-1)
-        dxdu,dydv = rays[...,6:9],rays[...,9:12]
-            
+        rays, rgbs_gt = batch["rays"].to(device), batch["rgbs"]
+        rays_o, rays_d = rays[..., :3], rays[..., 3:6]
+        rays_d = NF.normalize(rays_d, dim=-1)
+        dxdu, dydv = rays[..., 6:9], rays[..., 9:12]
+
         L_train = torch.zeros_like(rays_o)
-        L_full  = torch.zeros_like(rays_o)
+        L_full = torch.zeros_like(rays_o)
         albedo = torch.zeros_like(rays_o)
         roughness = torch.zeros_like(rays_o[..., :1])
         metallic = torch.zeros_like(rays_o[..., :1])
@@ -247,170 +313,198 @@ class ModelTrainer(pl.LightningModule):
                 dxdu_b = dxdu[b0:b1]
                 dydv_b = dydv[b0:b1]
 
-                for _ in range(SPP//spp):
+                for _ in range(SPP // spp):
                     L_train[b0:b1] += path_tracing_single(
-                        self.scene, self.emitter, self.material,
-                        rays_o_b, rays_d_b, dxdu_b, dydv_b, spp
+                        self.scene,
+                        self.emitter,
+                        self.material,
+                        rays_o_b,
+                        rays_d_b,
+                        dxdu_b,
+                        dydv_b,
+                        spp,
                     )
                     L_full[b0:b1] += path_tracing(
-                        self.scene, self.emitter, self.material,
-                        rays_o_b, rays_d_b, dxdu_b, dydv_b, spp,
-                        indir_depth=5
+                        self.scene,
+                        self.emitter,
+                        self.material,
+                        rays_o_b,
+                        rays_d_b,
+                        dxdu_b,
+                        dydv_b,
+                        spp,
+                        indir_depth=5,
                     )
 
                     # sample pixels
-                    du,dv = torch.rand(2,len(rays_o_b),spp,1,device=device)
-                    ds = rays_d_b[:,None]+ dxdu_b[:,None]*du + dydv_b[:,None]*dv
-                    ds = NF.normalize(ds,dim=-1).reshape(-1,3)
-                    xs = rays_o_b.repeat_interleave(spp,dim=0)
+                    du, dv = torch.rand(2, len(rays_o_b), spp, 1, device=device)
+                    ds = rays_d_b[:, None] + dxdu_b[:, None] * du + dydv_b[:, None] * dv
+                    ds = NF.normalize(ds, dim=-1).reshape(-1, 3)
+                    xs = rays_o_b.repeat_interleave(spp, dim=0)
 
-                    positions,normals,_,triagnle_idxs,valid = ray_intersect(self.scene,xs,ds)
+                    positions, normals, _, triagnle_idxs, valid = ray_intersect(
+                        self.scene, xs, ds
+                    )
 
                     mat = self.material(positions)
 
                     # get brdf parameters
-                    albedo_ = mat['albedo']
-                    metallic_ = mat['metallic']
-                    roughness_ = mat['roughness']
+                    albedo_ = mat["albedo"]
+                    metallic_ = mat["metallic"]
+                    roughness_ = mat["roughness"]
 
                     # find emission
-                    emission_ = self.emitter.eval_emitter(positions,ds,triagnle_idxs)[0]
-                    emit_mask = emission_.sum(-1,keepdim=True)==0
+                    emission_ = self.emitter.eval_emitter(positions, ds, triagnle_idxs)[
+                        0
+                    ]
+                    emit_mask = emission_.sum(-1, keepdim=True) == 0
                     valid = valid.unsqueeze(-1)
 
                     # scene intrinsics
-                    albedo[b0:b1] += (albedo_*valid*emit_mask).reshape(-1,spp,3).mean(1)
-                    roughness[b0:b1] += (roughness_*valid*emit_mask).reshape(-1,spp,1).mean(1)
-                    metallic[b0:b1] += (metallic_*valid*emit_mask).reshape(-1,spp,1).mean(1)
-                    emission[b0:b1] += emission_.reshape(-1,spp,3).mean(1)
+                    albedo[b0:b1] += (
+                        (albedo_ * valid * emit_mask).reshape(-1, spp, 3).mean(1)
+                    )
+                    roughness[b0:b1] += (
+                        (roughness_ * valid * emit_mask).reshape(-1, spp, 1).mean(1)
+                    )
+                    metallic[b0:b1] += (
+                        (metallic_ * valid * emit_mask).reshape(-1, spp, 1).mean(1)
+                    )
+                    emission[b0:b1] += emission_.reshape(-1, spp, 3).mean(1)
 
-
-        L_train = L_train / (SPP//spp)
+        L_train = L_train / (SPP // spp)
         L_train = L_train.reshape(*img_hw, -1).cpu()
         L_train = denoiser(L_train.numpy()).numpy()
         L_train_copy = L_train.copy()
 
-        exposure = batch['exposure']
+        exposure = batch["exposure"]
         L_train = torch.tensor(L_train).reshape(-1, 3).to(device)
         L_train = self.model_crf(L_train, exposure)
         L_train = L_train.detach().reshape(*img_hw, -1).cpu().numpy()
 
-        path = os.path.join(dir_val, '{:0>5d}_L_train.png'.format(self.global_step))
+        path = os.path.join(dir_val, "{:0>5d}_L_train.png".format(self.global_step))
         save_image(L_train, path)
-            
-        L_full  = L_full  / (SPP//spp)
+
+        L_full = L_full / (SPP // spp)
         L_full = L_full.reshape(*img_hw, -1).cpu()
         L_full = denoiser(L_full.numpy()).numpy()
 
-        exposure = batch['exposure']
+        exposure = batch["exposure"]
         L_full = torch.tensor(L_full).reshape(-1, 3).to(device)
         L_full = self.model_crf(L_full, exposure)
         L_full = L_full.detach().reshape(*img_hw, -1).cpu().numpy()
 
-        path = os.path.join(dir_val, '{:0>5d}_L_full.png'.format(self.global_step))
+        path = os.path.join(dir_val, "{:0>5d}_L_full.png".format(self.global_step))
         save_image(L_full, path)
 
         L_gt = rgbs_gt.reshape(*img_hw, -1).cpu().numpy()
-        path = os.path.join(dir_val, '{:0>5d}_L_gt.png'.format(self.global_step))
+        path = os.path.join(dir_val, "{:0>5d}_L_gt.png".format(self.global_step))
         save_image(L_gt, path)
 
-        albedo = albedo.reshape(*img_hw,-1).cpu()/(SPP//spp)
-        path = os.path.join(dir_val, '{:0>5d}_mat_albedo.png'.format(self.global_step))
+        albedo = albedo.reshape(*img_hw, -1).cpu() / (SPP // spp)
+        path = os.path.join(dir_val, "{:0>5d}_mat_albedo.png".format(self.global_step))
         save_image(albedo, path)
-        roughness = roughness.reshape(*img_hw,1).cpu()/(SPP//spp)
-        path = os.path.join(dir_val, '{:0>5d}_mat_roughness.png'.format(self.global_step))
+        roughness = roughness.reshape(*img_hw, 1).cpu() / (SPP // spp)
+        path = os.path.join(
+            dir_val, "{:0>5d}_mat_roughness.png".format(self.global_step)
+        )
         save_image(roughness, path, colormap=True)
-        metallic = metallic.reshape(*img_hw,1).cpu()/(SPP//spp)
-        path = os.path.join(dir_val, '{:0>5d}_mat_metallic.png'.format(self.global_step))
+        metallic = metallic.reshape(*img_hw, 1).cpu() / (SPP // spp)
+        path = os.path.join(
+            dir_val, "{:0>5d}_mat_metallic.png".format(self.global_step)
+        )
         save_image(metallic, path, colormap=True)
-        emission = emission.reshape(*img_hw,-1).cpu()/(SPP//spp)/20
-        path = os.path.join(dir_val, '{:0>5d}_emission.png'.format(self.global_step))
+        emission = emission.reshape(*img_hw, -1).cpu() / (SPP // spp) / 20
+        path = os.path.join(dir_val, "{:0>5d}_emission.png".format(self.global_step))
         save_image(emission, path)
         saturated_L = L_train_copy > 1.0
         saturated_gt = rgbs_gt.reshape(*img_hw, -1).numpy() > 0.99
         mask = np.logical_and(saturated_L, saturated_gt).astype(np.float32)
-        path = os.path.join(dir_val, '{:0>5d}_mask.png'.format(self.global_step))
+        path = os.path.join(dir_val, "{:0>5d}_mask.png".format(self.global_step))
         save_image(mask, path)
 
         crfs_gt = self.val_dataset.crfs
         crfs_pred = self.model_crf.get_crf()
-        path = os.path.join(dir_val, '{:0>5d}_crfs.png'.format(self.global_step))
+        path = os.path.join(dir_val, "{:0>5d}_crfs.png".format(self.global_step))
         plot_crfs(crfs_pred, crfs_gt, path)
         weight_gt = self.model_crf.cal_weight_fitting_crf(self.val_dataset.crfs)
         weight_pred = self.model_crf.weight
-        path = os.path.join(dir_val, '{:0>5d}_crfs_weight.png'.format(self.global_step))
+        path = os.path.join(dir_val, "{:0>5d}_crfs_weight.png".format(self.global_step))
         plot_weights(weight_pred, weight_gt, path)
 
-    
     def validation_step(self, batch, batch_idx):
-        """ visualize diffuse reflectance kd
-        """
-        rays,rgb_gt = batch['rays'], batch['rgbs']
-        if self.dataset_name == 'synthetic':
-            emission_mask_gt = batch['emission'].mean(-1,keepdim=True) == 0
+        """visualize diffuse reflectance kd"""
+        rays, rgb_gt = batch["rays"], batch["rgbs"]
+        if self.dataset_name == "synthetic":
+            emission_mask_gt = batch["emission"].mean(-1, keepdim=True) == 0
         else:
-            emission_mask_gt = torch.ones_like(rays[...,:1])
-        rays_x = rays[:,:3]
-        rays_d = NF.normalize(rays[:,3:6],dim=-1)
+            emission_mask_gt = torch.ones_like(rays[..., :1])
+        rays_x = rays[:, :3]
+        rays_d = NF.normalize(rays[:, 3:6], dim=-1)
 
-        positions,normals,_,_,valid = ray_intersect(self.scene,rays_x,rays_d)
+        positions, normals, _, _, valid = ray_intersect(self.scene, rays_x, rays_d)
         position = positions[valid]
 
         # batched rendering diffuse reflectance
         B = valid.sum()
         batch_size = 10240
         albedo_ = []
-        for b in range(math.ceil(B*1.0/batch_size)):
-            b0 = b*batch_size
-            b1 = min(b0+batch_size,B)
+        for b in range(math.ceil(B * 1.0 / batch_size)):
+            b0 = b * batch_size
+            b1 = min(b0 + batch_size, B)
             mat = self.material(position[b0:b1])
-            albedo_.append(mat['albedo']*(1-mat['metallic']))
+            albedo_.append(mat["albedo"] * (1 - mat["metallic"]))
         albedo_ = torch.cat(albedo_)
-        albedo = torch.zeros(len(valid),3,device=valid.device)
+        albedo = torch.zeros(len(valid), 3, device=valid.device)
         albedo[valid] = albedo_
-        
-        if self.dataset_name == 'synthetic':
-            albedo_gt = batch['kd']
-        else: # show rgb is no ground truth kd
-            albedo_gt = rgb_gt.pow(1/GAMMA).clamp(0,1)
+
+        if self.dataset_name == "synthetic":
+            albedo_gt = batch["kd"]
+        else:  # show rgb is no ground truth kd
+            albedo_gt = rgb_gt.pow(1 / GAMMA).clamp(0, 1)
 
         # mask out emissive regions
-        albedo = albedo*emission_mask_gt
+        albedo = albedo * emission_mask_gt
         albedo_gt = albedo_gt * emission_mask_gt
-        loss_c = NF.mse_loss(albedo_gt,albedo)
-        
+        loss_c = NF.mse_loss(albedo_gt, albedo)
+
         loss = loss_c
         psnr = -10.0 * math.log10(loss_c.clamp_min(1e-5))
-        
-        
-        self.log('val/loss', loss)
-        self.log('val/psnr', psnr)
+
+        self.log("val/loss", loss)
+        self.log("val/psnr", psnr)
         return
 
-            
+
 def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
-        for name, args in default_options.items():
-            if(args['type'] == bool):
-                parser.add_argument('--{}'.format(name), type=eval, choices=[True, False], default=str(args.get('default')))
-            else:
-                parser.add_argument('--{}'.format(name), **args)
-        return parser
-        
-if __name__ == '__main__':
+    parser = ArgumentParser(parents=[parent_parser], add_help=False)
+    for name, args in default_options.items():
+        if args["type"] == bool:
+            parser.add_argument(
+                "--{}".format(name),
+                type=eval,
+                choices=[True, False],
+                default=str(args.get("default")),
+            )
+        else:
+            parser.add_argument("--{}".format(name), **args)
+    return parser
+
+
+if __name__ == "__main__":
     parser = ArgumentParser()
     parser = add_model_specific_args(parser)
     hparams, _ = parser.parse_known_args()
 
     # add PROGRAM level args
-    parser.add_argument('--experiment_name', type=str, required=True)
-    parser.add_argument('--max_epochs', type=int, default=500)
-    parser.add_argument('--log_path', type=str, default='./logs')
-    parser.add_argument('--ft', type=str, default=None)
-    parser.add_argument('--checkpoint_path', type=str, default='./checkpoints')
-    parser.add_argument('--resume', dest='resume', action='store_true')
-    parser.add_argument('--device', type=int, required=False,default=None)
-    parser.add_argument('--val_frame', type=int, default=0)
+    parser.add_argument("--experiment_name", type=str, required=True)
+    parser.add_argument("--max_epochs", type=int, default=500)
+    parser.add_argument("--log_path", type=str, default="./logs")
+    parser.add_argument("--ft", type=str, default=None)
+    parser.add_argument("--checkpoint_path", type=str, default="./checkpoints")
+    parser.add_argument("--resume", dest="resume", action="store_true")
+    parser.add_argument("--device", type=int, required=False, default=None)
+    parser.add_argument("--val_frame", type=int, default=0)
 
     parser.set_defaults(resume=False)
     args = parser.parse_args()
@@ -423,33 +517,37 @@ if __name__ == '__main__':
     checkpoint_path = Path(args.checkpoint_path) / experiment_name
     log_path = Path(args.log_path)
     checkpoint_path.mkdir(parents=True, exist_ok=True)
-    
-    checkpoint_callback = ModelCheckpoint(checkpoint_path, monitor='val/loss', save_top_k=1, save_last=True)
 
-    last_ckpt = checkpoint_path / 'last.ckpt' if args.resume else None
+    checkpoint_callback = ModelCheckpoint(
+        checkpoint_path, monitor="val/loss", save_top_k=1, save_last=True
+    )
+
+    last_ckpt = checkpoint_path / "last.ckpt" if args.resume else None
     if (last_ckpt is None) or (not (last_ckpt.exists())):
         last_ckpt = None
     else:
         last_ckpt = str(last_ckpt)
-    
+
     # setup model trainer
     model = ModelTrainer(hparams)
-    
+
     # Update to lightning 1.9
     trainer = Trainer.from_argparse_args(
         args,
-        accelerator='gpu', devices=[0], gpus=None, 
+        accelerator="gpu",
+        devices=[0],
+        gpus=None,
         # logger=logger,
         callbacks=[checkpoint_callback],
         log_every_n_steps=1,
-        max_epochs=args.max_epochs, 
+        max_epochs=args.max_epochs,
     )
 
     start_time = time.time()
-    
+
     trainer.fit(
-        model, 
-        ckpt_path=last_ckpt, 
-        )
-    
-    print('[train - BRDF-emission] time (s): ', time.time()-start_time)
+        model,
+        ckpt_path=last_ckpt,
+    )
+
+    print("[train - BRDF-emission] time (s): ", time.time() - start_time)

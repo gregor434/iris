@@ -138,7 +138,9 @@ def load_rgb_image(path):
     if image.ndim == 2:
         image = image[..., None].repeat(3, axis=-1)
     elif image.ndim != 3 or image.shape[2] != 3:
-        raise ValueError(f"Expected 2D or 3-channel image at {path}, got shape {image.shape}")
+        raise ValueError(
+            f"Expected 2D or 3-channel image at {path}, got shape {image.shape}"
+        )
     return image[..., [2, 1, 0]].astype(np.float32)
 
 
@@ -150,7 +152,9 @@ def load_scalar_image(path):
         return image.astype(np.float32)
     if image.ndim == 3 and image.shape[2] == 3:
         return image[..., 0].astype(np.float32)
-    raise ValueError(f"Expected 2D or 3-channel image at {path}, got shape {image.shape}")
+    raise ValueError(
+        f"Expected 2D or 3-channel image at {path}, got shape {image.shape}"
+    )
 
 
 def load_aov(path, kind):
@@ -272,7 +276,9 @@ def aggregate_rows(rows):
         aggregate[mse_key] = float(np.mean([row[mse_key] for row in rows]))
         aggregate[mae_key] = float(np.mean([row[mae_key] for row in rows]))
         aggregate[max_value_key] = max(row[max_value_key] for row in rows)
-        aggregate[f"{aov_name}_psnr"] = psnr(aggregate[mse_key], aggregate[max_value_key])
+        aggregate[f"{aov_name}_psnr"] = psnr(
+            aggregate[mse_key], aggregate[max_value_key]
+        )
     return aggregate
 
 
@@ -301,9 +307,7 @@ def print_per_frame_rows(rows):
     for aov_name in AOV_SPECS:
         if f"{aov_name}_mse" not in rows[0]:
             continue
-        header.extend(
-            [f"{aov_name}_mse", f"{aov_name}_mae", f"{aov_name}_psnr"]
-        )
+        header.extend([f"{aov_name}_mse", f"{aov_name}_mae", f"{aov_name}_psnr"])
     print(",".join(header))
     for row in rows:
         values = [str(row["frame"])]
@@ -320,9 +324,7 @@ def write_csv(rows, output_csv):
     for aov_name in AOV_SPECS:
         if f"{aov_name}_mse" not in rows[0]:
             continue
-        fieldnames.extend(
-            [f"{aov_name}_mse", f"{aov_name}_mae", f"{aov_name}_psnr"]
-        )
+        fieldnames.extend([f"{aov_name}_mse", f"{aov_name}_mae", f"{aov_name}_psnr"])
 
     with output_path.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)

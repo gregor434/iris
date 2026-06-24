@@ -7,5 +7,9 @@
 from .real_ldr import RealDatasetLDR, InvRealDatasetLDR
 from .synthetic_ldr import SyntheticDatasetLDR, InvSyntheticDatasetLDR
 
-__all__ = [RealDatasetLDR, InvRealDatasetLDR,
-           SyntheticDatasetLDR, InvSyntheticDatasetLDR]
+__all__ = [
+    RealDatasetLDR,
+    InvRealDatasetLDR,
+    SyntheticDatasetLDR,
+    InvSyntheticDatasetLDR,
+]
