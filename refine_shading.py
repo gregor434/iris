@@ -204,8 +204,8 @@ if __name__ == "__main__":
                 )
                 L0[b0:b1] = L0_
                 L1[b0:b1] = L1_
-            assert L0.isnan().any() == False
-            assert L1.isnan().any() == False
+            assert not L0.isnan().any()
+            assert not L1.isnan().any()
             L0 = denoiser(mitsuba.TensorXf(L0.reshape(*img_hw, 3))).numpy()
             L1 = denoiser(mitsuba.TensorXf(L1.reshape(*img_hw, 3))).numpy()
             cv2.imwrite(

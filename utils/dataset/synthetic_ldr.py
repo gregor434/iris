@@ -417,7 +417,7 @@ class SyntheticDatasetLDR(Dataset):
 
                 self.all_rgbs += [img]
 
-                if self.ray_diff == False:
+                if not self.ray_diff:
                     rays_o, rays_d = get_rays(self.directions, c2w)
 
                     ray_tensors = [
@@ -476,7 +476,7 @@ class SyntheticDatasetLDR(Dataset):
                 self.render_traj_rays += [torch.cat([rays_o, rays_d, dxdu, dydv], 1)]
 
     def __len__(self):
-        if self.pixel == True:
+        if self.pixel:
             return len(self.all_rays)
         # if self.split == 'val':
         #     # only show 8 images for reconstruction validation
@@ -489,7 +489,7 @@ class SyntheticDatasetLDR(Dataset):
             if self.multi_exposure:
                 exposure = self.exposures[idx]
             tmp = self.all_rays[idx]
-            if self.ray_diff == False:
+            if not self.ray_diff:
                 sample = {
                     "rays": tmp[:8],
                     "rgbs": self.all_rgbs[idx],
@@ -567,7 +567,7 @@ class SyntheticDatasetLDR(Dataset):
                     self.img_hw,
                 ).reshape(-1)
 
-            if self.ray_diff == False:
+            if not self.ray_diff:
                 rays_o, rays_d = get_rays(self.directions, c2w)
 
                 rays = torch.cat([rays_o, rays_d], 1)
@@ -819,10 +819,8 @@ class InvSyntheticDatasetLDR(Dataset):
         self.idxs = torch.randperm(len(self.all_rays))
 
     def __len__(self):
-        if self.pixel == True:
+        if self.pixel:
             return self.batch_num
-        # if self.split == 'val':
-        #     return 8
         return len(self.meta["frames"])
 
     def __getitem__(self, idx):

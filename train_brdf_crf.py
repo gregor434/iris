@@ -654,7 +654,7 @@ class ModelTrainer(pl.LightningModule):
 def add_model_specific_args(parent_parser):
     parser = ArgumentParser(parents=[parent_parser], add_help=False)
     for name, args in default_options.items():
-        if args["type"] == bool:
+        if args["type"] is bool:
             parser.add_argument(
                 "--{}".format(name),
                 type=eval,

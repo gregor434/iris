@@ -203,7 +203,7 @@ class Scannetpp(Dataset):
     def __len__(
         self,
     ):
-        if self.pixel == True:
+        if self.pixel:
             return len(self.all_rays)
         return len(self.C2Ws)
 
@@ -451,10 +451,8 @@ class InvScannetpp(Dataset):
     def __len__(
         self,
     ):
-        if self.pixel == True:
+        if self.pixel:
             return self.batch_num
-        # if self.split == 'val':
-        #     return 8
         return len(self.C2Ws)
 
     def __getitem__(self, idx):

@@ -137,7 +137,7 @@ class RealDatasetLDR(Dataset):
         self.root_dir = root_dir
         self.pixel = pixel
         self.split = split
-        if img_dir == None:
+        if img_dir is None:
             self.img_dir = "Image"
             self.exposures = None
             self.crfs = None
@@ -254,11 +254,8 @@ class RealDatasetLDR(Dataset):
     def __len__(
         self,
     ):
-        if self.pixel == True:
+        if self.pixel:
             return len(self.all_rays)
-        # if self.split == 'val':
-        #     # only load 8 images for validation of reconstruction
-        #     return 8
         return len(self.C2Ws)
 
     def __getitem__(self, idx):
@@ -335,7 +332,7 @@ class InvRealDatasetLDR(Dataset):
         """
         self.root_dir = root_dir
         self.cache_dir = cache_dir
-        if img_dir == None:
+        if img_dir is None:
             self.img_dir = "Image"
             self.albedo_dir = "irisformer/albedo"
             self.exposures = None

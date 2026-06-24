@@ -225,7 +225,7 @@ class ModelTrainer(pl.LightningModule):
 
         # diffuse regualrization
         mat = self.material(positions)
-        albedo, metallic, roughness = mat["albedo"], mat["metallic"], mat["roughness"]
+        albedo, roughness = mat["albedo"], mat["roughness"]
 
         # only optimize emitter
         for param in self.material.parameters():
