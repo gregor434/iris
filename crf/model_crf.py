@@ -9,13 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_interpolations
-import os
-import pathlib
-from tqdm import tqdm
-import scipy
-from scipy import interpolate
-from matplotlib import pyplot as plt
-from .emor import parse_dorf_curves, parse_emor_file
+from .emor import parse_emor_file
 from const import set_random_seed
 
 set_random_seed()

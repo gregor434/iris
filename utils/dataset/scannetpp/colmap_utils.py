@@ -36,7 +36,6 @@
 # Author: Johannes L. Schoenberger (jsch at inf.ethz.ch)
 
 import os
-import sys
 import collections
 import numpy as np
 import struct

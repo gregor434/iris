@@ -11,11 +11,8 @@ mitsuba.set_variant("cuda_ad_rgb")
 import os
 
 os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
-import cv2
-import imageio
 import numpy as np
 import torch
-import open3d as o3d
 import trimesh
 import xatlas
 import nvdiffrast.torch as dr

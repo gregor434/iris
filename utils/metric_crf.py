@@ -5,19 +5,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-import torch.nn.functional as NF
 
-import math
 import os
 
 os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
-import cv2
 
 import numpy as np
-import pandas as pd
 
 import matplotlib.pyplot as plt
-from tqdm import tqdm
 from crf.model_crf import EmorCRF
 import plotly.graph_objects as go
 import argparse

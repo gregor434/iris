@@ -14,14 +14,11 @@ import torch_scatter
 import time
 import pytorch_lightning as pl
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger
 import mitsuba
 
 mitsuba.set_variant("cuda_ad_rgb")
 import math
-import numpy as np
 import os
 from pathlib import Path
 from argparse import Namespace, ArgumentParser
@@ -36,9 +33,8 @@ from utils.dataset import (
 from utils.dataset.scannetpp.dataset import Scannetpp, InvScannetpp
 from utils.ops import *
 from utils.path_tracing import ray_intersect, path_tracing, path_tracing_single
-from model.mlps import ImplicitMLP
 from model.brdf import NGPBRDF
-from model.emitter import SLFEmitter, SLFEmitterLearn
+from model.emitter import SLFEmitterLearn
 from crf.model_crf import EmorCRF
 from crf.plot import plot_crfs
 from render import save_image

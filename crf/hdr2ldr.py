@@ -14,7 +14,7 @@ from matplotlib import pyplot as plt
 from argparse import ArgumentParser
 from tqdm import tqdm
 from scipy import interpolate
-from .emor import parse_dorf_curves, parse_emor_file
+from .emor import parse_dorf_curves
 
 
 def open_exr(file):

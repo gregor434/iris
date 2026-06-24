@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-import torch.nn.functional as NF
 from torch.utils.data import Dataset
 import json
 import numpy as np
@@ -13,7 +12,6 @@ import os
 
 os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
 from PIL import Image
-from torchvision import transforms as T
 import cv2
 import math
 from const import GAMMA, set_random_seed

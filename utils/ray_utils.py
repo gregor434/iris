@@ -6,7 +6,6 @@
 
 import torch
 import numpy as np
-from kornia import create_meshgrid
 from einops import rearrange
 import scipy
 

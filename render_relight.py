@@ -7,7 +7,6 @@
 import math
 import numpy as np
 import torch
-import torch.nn.functional as NF
 import mitsuba
 
 mitsuba.set_variant("cuda_ad_rgb")
@@ -24,23 +23,21 @@ from utils.dataset.scannetpp.dataset import Scannetpp
 from utils.ops import *
 from model.brdf import NGPBRDF
 from model.emitter import SLFEmitter
-from model.fipt_bsdf import FIPTBSDF
 from crf.model_crf import EmorCRF
 from utils.disco_ball import make_disco_ball
 
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 from PIL import Image
 from omegaconf import OmegaConf
 import copy
-from argparse import Namespace, ArgumentParser
+from argparse import ArgumentParser
 
 # disable for customized BSDF to work
 import drjit as dr
 
 dr.set_flag(dr.JitFlag.VCallRecord, False)
 dr.set_flag(dr.JitFlag.LoopRecord, False)
-from const import GAMMA, SEED, set_random_seed
+from const import SEED, set_random_seed
 
 set_random_seed()
 

@@ -7,7 +7,6 @@
 import numpy as np
 import os
 import pathlib
-from matplotlib import pyplot as plt
 from const import set_random_seed
 
 set_random_seed()

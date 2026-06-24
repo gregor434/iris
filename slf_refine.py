@@ -11,13 +11,11 @@ mitsuba.set_variant("cuda_ad_rgb")
 import os
 
 os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
-import cv2
 
 from utils.dataset import SyntheticDatasetLDR, RealDatasetLDR
 from utils.dataset.scannetpp.dataset import Scannetpp
 from utils.path_tracing import ray_intersect
 from model.slf import VoxelSLF
-from model.brdf import BaseBRDF
 from crf.model_crf import EmorCRF
 from pathlib import Path
 from tqdm import tqdm

@@ -10,9 +10,7 @@ import mitsuba
 
 mitsuba.set_variant("cuda_ad_rgb")
 import numpy as np
-import torch
 import torch.nn.functional as F
-import math
 
 import os
 
@@ -27,12 +25,9 @@ from utils.dataset import (
 )
 from utils.dataset.scannetpp.dataset import Scannetpp
 from utils.path_tracing import ray_intersect
-from model.brdf import BaseBRDF
-from model.emitter import SLFEmitter
 from pathlib import Path
 from tqdm import tqdm
 from argparse import ArgumentParser
-import time
 
 if __name__ == "__main__":
     parser = ArgumentParser()

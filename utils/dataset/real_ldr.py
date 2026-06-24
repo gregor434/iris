@@ -7,7 +7,6 @@
 import torch
 import torch.nn.functional as NF
 from torch.utils.data import Dataset
-import json
 import numpy as np
 import os
 

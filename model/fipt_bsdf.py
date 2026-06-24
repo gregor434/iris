@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-import torch.nn.functional as NF
 
 import mitsuba
 
@@ -16,7 +15,6 @@ import sys
 
 sys.path.append("..")
 from model.brdf import NGPBRDF
-from model.emitter import SLFEmitter
 
 
 class FIPTBSDF(mitsuba.BSDF):

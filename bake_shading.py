@@ -16,10 +16,8 @@ import cv2
 from utils.dataset import SyntheticDatasetLDR, RealDatasetLDR
 from utils.dataset.scannetpp.dataset import Scannetpp
 from utils.path_tracing import ray_intersect
-from model.slf import VoxelSLF
 from model.brdf import BaseBRDF
 from model.emitter import SLFEmitter
-from crf.model_crf import EmorCRF
 from pathlib import Path
 from tqdm import tqdm
 from argparse import ArgumentParser

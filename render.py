@@ -22,7 +22,7 @@ from configs.config import default_options
 from utils.dataset import RealDatasetLDR, SyntheticDatasetLDR
 from utils.dataset.scannetpp.dataset import Scannetpp
 from utils.ops import *
-from utils.path_tracing import ray_intersect, path_tracing, path_tracing_single
+from utils.path_tracing import ray_intersect, path_tracing
 
 from model.brdf import NGPBRDF
 from model.emitter import SLFEmitter, AreaEmitter
@@ -30,10 +30,9 @@ from crf.model_crf import EmorCRF
 from crf.plot import plot_crfs
 
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 from PIL import Image
-from argparse import Namespace, ArgumentParser
-from const import GAMMA, set_random_seed
+from argparse import ArgumentParser
+from const import set_random_seed
 
 set_random_seed()
 
